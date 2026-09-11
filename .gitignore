@@ -1,0 +1,189 @@
+# ============================================================
+# Python bytecode and caches
+# ============================================================
+
+__pycache__/
+*.py[cod]
+*$py.class
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.coverage
+.coverage.*
+htmlcov/
+
+# ============================================================
+# Python packaging
+# ============================================================
+
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# ============================================================
+# Virtual environments
+# ============================================================
+
+.venv/
+venv/
+env/
+ENV/
+.conda/
+
+# ============================================================
+# Local configuration and secrets
+# ============================================================
+
+.env
+.env.*
+!.env.example
+
+configs/local.yaml
+configs/local.yml
+configs/private/
+secrets/
+
+*.pem
+*.key
+*.token
+credentials.json
+
+# ============================================================
+# IDE and operating system
+# ============================================================
+
+.vscode/
+.idea/
+*.swp
+*.swo
+
+.DS_Store
+Thumbs.db
+
+# ============================================================
+# Jupyter
+# ============================================================
+
+.ipynb_checkpoints/
+
+# ============================================================
+# Temporary files
+# ============================================================
+
+/tmp/
+/temp/
+/.codex_tmp/
+
+*.tmp
+*.temp
+*.bak
+*.cache
+core.*
+
+# ============================================================
+# Logs
+# ============================================================
+
+*.log
+nohup.out
+
+/logs/
+/lightning_logs/
+/tensorboard/
+/wandb/
+/mlruns/
+/ray_results/
+
+# ============================================================
+# Raw and processed datasets
+# These are safeguards if data is accidentally placed in repo
+# ============================================================
+
+/data/
+/dataset/
+/datasets/
+/raw_data/
+/processed_data/
+/quarantine/
+
+# ============================================================
+# Model downloads and caches
+# ============================================================
+
+/models/
+/pretrained_models/
+/model_cache/
+/cache/
+/huggingface/
+/torch_cache/
+
+# ============================================================
+# Training and evaluation artifacts
+# ============================================================
+
+/runs/
+/outputs/
+/artifacts/
+/checkpoints/
+/predictions/
+/results/generated/
+
+# Model and optimizer weights
+*.ckpt
+*.safetensors
+*.pt
+*.pth
+*.pkl
+*.pickle
+
+pytorch_model*.bin
+adapter_model*.bin
+optimizer*.bin
+optimizer*.pt
+scheduler*.pt
+rng_state*.pth
+
+# ============================================================
+# Large downloaded archives
+# ============================================================
+
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.7z
+*.rar
+
+# ============================================================
+# External/upstream source copies
+# AutoVLA, TRL and nuScenes-devkit should be sibling repos
+# ============================================================
+
+/github_masters/
+/third_party/
+/external/
+/vendor/
+
+# ============================================================
+# Distributed training artifacts
+# ============================================================
+
+*.rank*
+*.distcp
+*.lock
+
+/deepspeed/
+/fsdp_checkpoints/
+
+# ============================================================
+# Profiling and debugging
+# ============================================================
+
+*.prof
+*.trace
+*.nsys-rep
+*.qdrep
