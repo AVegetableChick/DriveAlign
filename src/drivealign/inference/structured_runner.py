@@ -22,14 +22,14 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from drivealign.contracts.output import (
-    DEFAULT_SCHEMA_VERSION,
+    DEFAULT_CONTRACT_VERSION,
     OutputContractError,
     OutputErrorCategory,
     ParseResult,
     StructuredDrivingOutput,
     parse_structured_output,
 )
-from drivealign.contracts.prompt import PROMPT_VERSION, build_structured_prompt
+from drivealign.contracts.prompt import build_structured_prompt
 from drivealign.inference.base_runner import GenerationResult, generate_one
 from drivealign.inference.model_loader import LoadedModel
 
@@ -41,17 +41,16 @@ OK_STATUS = "ok"
 class SampleRequest:
     """One batch item: a traced sample id, its image, and causal inputs.
 
-    ``prompt_version``/``schema_version`` default to the frozen pairing
-    (prompt v3 + schema v2). Explicit values exist for reproducibility of
-    earlier pairings, e.g. prompt v2 + schema v1 for the recorded S03 run.
+    ``contract_version`` defaults to the frozen pairing (v3: prompt v3 +
+    closed-vocabulary schema). Explicit values exist for reproducibility of
+    earlier pairings, e.g. contract v2 for the recorded S03 sanity run.
     """
 
     sample_id: str
     image: str | Path
     available_speed: str | None = None
     image_size: tuple[float, float] | None = None
-    prompt_version: str | None = None
-    schema_version: str | None = None
+    contract_version: str | None = None
 
 
 @dataclass(frozen=True)
@@ -77,8 +76,7 @@ class SampleRecord:
     telemetry: dict[str, Any] | None
     available_speed: str | None
     extracted_from_fences: bool = False
-    prompt_version: str = PROMPT_VERSION
-    schema_version: str = DEFAULT_SCHEMA_VERSION
+    contract_version: str = DEFAULT_CONTRACT_VERSION
     normalized_terms: tuple[tuple[str, str], ...] = ()
     unmapped_terms: tuple[str, ...] = ()
     derived_positions: tuple[str | None, ...] = ()
@@ -106,7 +104,7 @@ def _make_record(
     generation_error: str | None = None,
     telemetry: dict[str, Any] | None = None,
     extracted_from_fences: bool = False,
-    schema_version: str | None = None,
+    contract_version: str | None = None,
     normalized_terms: tuple[tuple[str, str], ...] = (),
     unmapped_terms: tuple[str, ...] = (),
     derived_positions: tuple[str | None, ...] = (),
@@ -124,8 +122,9 @@ def _make_record(
         telemetry=telemetry,
         available_speed=request.available_speed,
         extracted_from_fences=extracted_from_fences,
-        prompt_version=request.prompt_version or PROMPT_VERSION,
-        schema_version=schema_version or request.schema_version or DEFAULT_SCHEMA_VERSION,
+        contract_version=contract_version
+        or request.contract_version
+        or DEFAULT_CONTRACT_VERSION,
         normalized_terms=normalized_terms,
         unmapped_terms=unmapped_terms,
         derived_positions=derived_positions,
@@ -144,7 +143,7 @@ def run_structured_inference(
     the exception summary; they are never raised to the caller.
     """
     prompt = build_structured_prompt(
-        request.available_speed, version=request.prompt_version
+        request.available_speed, version=request.contract_version
     )
     try:
         generation = generate_one(
@@ -170,7 +169,7 @@ def run_structured_inference(
 
     result: ParseResult = parse_structured_output(
         generation.text,
-        schema_version=request.schema_version,
+        contract_version=request.contract_version,
         image_size=request.image_size,
     )
     status = OK_STATUS if result.ok else result.errors[0].category.value
@@ -184,7 +183,7 @@ def run_structured_inference(
         errors=result.errors,
         telemetry=_telemetry_to_dict(generation),
         extracted_from_fences=result.extracted_from_fences,
-        schema_version=result.schema_version,
+        contract_version=result.contract_version,
         normalized_terms=result.normalized_terms,
         unmapped_terms=result.unmapped_terms,
         derived_positions=result.derived_positions,
@@ -218,7 +217,7 @@ def run_structured_batch(
                 _make_record(
                     request,
                     build_structured_prompt(
-                        request.available_speed, version=request.prompt_version
+                        request.available_speed, version=request.contract_version
                     ),
                     OutputErrorCategory.GENERATION_FAILURE.value,
                     errors=(
@@ -239,8 +238,7 @@ def record_to_dict(record: SampleRecord) -> dict[str, Any]:
         "sample_id": record.sample_id,
         "image": record.image,
         "prompt": record.prompt,
-        "prompt_version": record.prompt_version,
-        "schema_version": record.schema_version,
+        "contract_version": record.contract_version,
         "available_speed": record.available_speed,
         "status": record.status,
         "parse_ok": record.parse_ok,
