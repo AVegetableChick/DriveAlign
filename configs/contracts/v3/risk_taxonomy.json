@@ -1,6 +1,6 @@
 {
-  "version": "v1",
-  "schema_ref": "output_schema_v2.json#/properties/risk_factors",
+  "version": "v3",
+  "schema_ref": "v3/output_schema.json#/properties/risk_factors",
   "description": "Closed risk taxonomy. Design constraint: every canonical term must be deterministically derivable from future physical evidence available to the M09 oracle (future ego corridor, future occupancy of other agents, minimum future distance, map geometry). This closes the v1 gap where risk_factors had derived ground truth but no direct scoring path. The parser normalizes synonyms before validation; unmapped terms are recorded in ParseResult.unmapped_terms and reported as semantic_range_failure.",
   "unmapped_policy": "record_and_fail",
   "terms": [

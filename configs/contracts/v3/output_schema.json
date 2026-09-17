@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://drivealign.local/schemas/output_schema_v2.json",
+  "$id": "https://drivealign.local/schemas/contracts/v3/output_schema.json",
   "title": "DriveAlign structured driving output contract v2",
   "description": "Single-image driving scene analysis output contract. Changes from v1: (1) coarse_position removed from the generation contract and derived by the parser from bbox_2d plus image size; (2) category closed over the nuScenes detection class set, canonical terms in configs/model/category_vocab_v1.json; (3) risk_factors closed over configs/model/risk_taxonomy_v1.json; (4) behavior replaced by motion_state enum defined in configs/model/motion_vocab_v1.json; (5) critical_objects capped at 8 items; (6) risk_factors must be unique. bbox_2d is [x_min, y_min, x_max, y_max] in absolute input-image pixel coordinates, origin top-left. Open-vocabulary model results are normalized by the versioned synonym tables; unmapped terms are recorded, never silently repaired.",
   "type": "object",

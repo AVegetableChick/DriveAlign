@@ -30,7 +30,7 @@
 ## 4. 输入与产物
 
 - 输入：Stage 02 通用单图 Runner；CAM_FRONT 测试图（1600×900）；`available_speed=null`（本轮未注入因果速度）
-- 产物 1：`configs/contracts/output_schema_v1.json` —— 机器可读 Schema（五顶层字段，`speed_action` 四值枚举，`additionalProperties: false`），冻结（原定 `configs/model/`，后迁至 `configs/contracts/` 以与 `src/drivealign/contracts/` 消费方对齐，`configs/model/` 保留给模型加载配置；内容与版本不变，见 §10 位置变更说明）
+- 产物 1：`configs/contracts/v1/output_schema.json` —— 机器可读 Schema（五顶层字段，`speed_action` 四值枚举，`additionalProperties: false`），冻结（原定 `configs/model/`，后迁至 `configs/contracts/` 以与 `src/drivealign/contracts/` 消费方对齐，`configs/model/` 保留给模型加载配置；内容与版本不变，见 §10 位置变更说明）
 - 产物 2：固定 prompt 模板 `PROMPT_VERSION = "v2"`（v1 首版，因围栏问题升级，见 §6 证据链）
 - 产物 3：严格 parser/validator（`contracts/output.py`）—— 错误四分类 `OutputErrorCategory`（generation / json_parse / schema / semantic_range），以 JSON Schema 文件为单一事实源（jsonschema Draft 2020-12），附加 bbox 角点顺序与图像边界 semantic 检查
 - 产物 4：结构化 Runner（`inference/structured_runner.py`）—— `SampleRequest/SampleRecord`、`run_structured_inference/run_structured_batch/record_to_dict`，生成异常降级为 generation_failure 记录，批处理永不中断
@@ -228,3 +228,7 @@ raw_text（模型原始回复）：
 - 代码同步点：`contracts/output.py` 的 `DEFAULT_SCHEMA_PATH` 与模块 docstring、`contracts/prompt.py` docstring；单测均经 `DEFAULT_SCHEMA_PATH` 引用，无需改动。
 - 内容与版本均不变，纯路径组织调整。
 - Prompt 存储方式变更：模板由 Python 常量改为版本化文件 `configs/contracts/prompts/structured_output_v{1,2,3}.txt`，`contracts/prompt.py` 变为加载器（`build_structured_prompt(available_speed, version)`）。v1 从第 1 轮 sanity records.jsonl 原样恢复；v2 与原常量逐字一致；v3 为 schema v2 配套草案（封闭词表枚举）。默认版本仍为 v2（与 schema v1 解析器配对），切换到 v3 须与 parser v2 同批上线。
+
+## 11. 版本编号对齐说明（提交后增补）
+
+应项目决策,契约版本统一为单一编号:每个 `configs/contracts/v{1,2,3}/` 文件夹自包含该配对的全部冻结产物(`prompt.txt`、`output_schema.json`,v3 另含三个词表)。配对语义:**v1 = prompt v1 + 自由文本 schema**(第一轮 sanity);**v2 = prompt v2 + 自由文本 schema**(本记录的实测配对);**v3 = prompt v3 + 封闭词表 schema**(当前默认)。parser/prompt/runner/records 只使用 `contract_version` 一个编号;`SampleRequest(contract_version="v2")` 可复现本记录第 3 轮实验。旧文件名(`output_schema_v1.json`、`structured_output_v3.txt` 等)已通过 `git mv` 迁移,版本注册表在 `src/drivealign/contracts/versions.py`。

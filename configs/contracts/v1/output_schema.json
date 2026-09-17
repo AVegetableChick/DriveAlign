@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://drivealign.local/schemas/output_schema_v1.json",
+  "$id": "https://drivealign.local/schemas/contracts/v1/output_schema.json",
   "title": "DriveAlign Structured Driving Output",
   "description": "Version 1 structured output contract for single-image driving scene analysis.",
   "type": "object",

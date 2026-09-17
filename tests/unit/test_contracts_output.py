@@ -17,17 +17,17 @@ import json
 import pytest
 
 from drivealign.contracts.output import (
-    DEFAULT_SCHEMA_VERSION,
+    DEFAULT_CONTRACT_VERSION,
     OutputErrorCategory,
     SPEED_ACTIONS,
     parse_structured_output,
 )
-from drivealign.contracts.prompt import PROMPT_VERSION, build_structured_prompt
+from drivealign.contracts.prompt import build_structured_prompt
 
 
 def parse_v1(raw, **kwargs):
-    """Parse against the explicit schema v1 (the default is now v2)."""
-    return parse_structured_output(raw, schema_version="v1", **kwargs)
+    """Parse against contract v1 (the default is now v3)."""
+    return parse_structured_output(raw, contract_version="v1", **kwargs)
 
 
 VALID_SAMPLE = {
@@ -64,7 +64,7 @@ def test_valid_sample_parses_ok():
     assert result.errors == ()
     assert result.output.speed_action == "KEEP_SPEED"
     assert result.output.critical_objects[0].bbox_2d == (120.0, 300.0, 480.0, 560.0)
-    assert result.output.schema_version == "v1"
+    assert result.output.contract_version == "v1"
 
 
 def test_to_dict_round_trip_is_stable():
@@ -196,8 +196,8 @@ def test_prompt_with_speed_only_prepends_one_line():
     assert build_structured_prompt("   ") == build_structured_prompt(None)
 
 
-def test_prompt_version_is_frozen():
-    assert PROMPT_VERSION == "v3"
+def test_default_contract_version_is_frozen():
+    assert DEFAULT_CONTRACT_VERSION == "v3"
 
 
 def test_prompt_v2_states_envelope_rules_explicitly():
@@ -259,7 +259,7 @@ def test_prompt_v3_lists_closed_vocabulary():
 def test_prompt_unknown_version_rejected():
     import pytest
 
-    with pytest.raises(ValueError, match="Unknown prompt version"):
+    with pytest.raises(ValueError, match="Unknown contract version"):
         build_structured_prompt(version="v9")
 
 
@@ -278,10 +278,10 @@ V2_VALID_SAMPLE = {
 }
 
 
-def test_default_schema_is_v2_and_parses_ok():
+def test_default_contract_is_v3_and_parses_ok():
     result = parse_structured_output(json.dumps(V2_VALID_SAMPLE))
     assert result.ok and result.errors == ()
-    assert result.output.schema_version == DEFAULT_SCHEMA_VERSION == "v2"
+    assert result.output.contract_version == DEFAULT_CONTRACT_VERSION == "v3"
     assert result.derived_positions == (None,)  # no image_size provided
 
 
@@ -347,7 +347,7 @@ def test_v2_canonical_terms_pass_without_rewrites():
     assert result.ok and result.normalized_terms == () and result.unmapped_terms == ()
 
 
-def test_v1_payload_fails_under_default_v2_schema():
+def test_v1_payload_fails_under_default_v3_schema():
     result = parse_structured_output(json.dumps(VALID_SAMPLE))
     assert not result.ok
     assert {e.category for e in result.errors} == {OutputErrorCategory.SCHEMA_FAILURE}
@@ -357,3 +357,10 @@ def test_v1_round_trip_still_works_with_explicit_version():
     parsed = parse_v1(json.dumps(VALID_SAMPLE))
     reparsed = parse_v1(json.dumps(parsed.output.to_dict()))
     assert reparsed.ok and reparsed.output == parsed.output
+
+
+def test_unknown_contract_version_rejected():
+    import pytest
+
+    with pytest.raises(ValueError, match="Unknown contract version"):
+        parse_structured_output("{}", contract_version="v9")

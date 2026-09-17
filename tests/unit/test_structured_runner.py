@@ -180,24 +180,19 @@ def test_fenced_output_is_extracted_with_flag():
 
 
 @pytest.mark.usefixtures("stub_generate")
-def test_default_record_carries_v3_v2_pairing():
+def test_default_record_carries_contract_v3():
     record = run_structured_inference(None, SampleRequest("ok-1", "img_ok.jpg"))
-    assert record.prompt_version == "v3" and record.schema_version == "v2"
+    assert record.contract_version == "v3"
 
 
 @pytest.mark.usefixtures("stub_generate")
-def test_explicit_version_pairing_reproduces_v1_run():
+def test_contract_v2_reproduces_recorded_s03_pairing():
     record = run_structured_inference(
         None,
-        SampleRequest(
-            "legacy-1",
-            "img_legacy.jpg",
-            prompt_version="v2",
-            schema_version="v1",
-        ),
+        SampleRequest("legacy-1", "img_legacy.jpg", contract_version="v2"),
     )
     assert record.status == OK_STATUS
-    assert record.prompt_version == "v2" and record.schema_version == "v1"
+    assert record.contract_version == "v2"
     assert record.output.critical_objects[0].coarse_position == "front center"
 
 

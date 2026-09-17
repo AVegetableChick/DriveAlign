@@ -1,6 +1,6 @@
 {
-  "version": "v1",
-  "schema_ref": "output_schema_v2.json#/$defs/critical_object/properties/motion_state",
+  "version": "v3",
+  "schema_ref": "v3/output_schema.json#/$defs/critical_object/properties/motion_state",
   "description": "Closed motion-state vocabulary replacing the v1 free-text behavior field. Design constraint: ground truth for each value is derivable from nuScenes box velocity and future tracks relative to the ego vehicle, so motion_state becomes scoreable for observable objects. The parser normalizes synonyms before validation; unmapped terms are recorded in ParseResult.unmapped_terms and reported as semantic_range_failure. The generic term 'moving' is intentionally unmapped because assigning it a direction would be a semantic guess (it appeared in the S03 sanity run), which the Stage 03 no-silent-repair rule forbids.",
   "unmapped_policy": "record_and_fail",
   "terms": [

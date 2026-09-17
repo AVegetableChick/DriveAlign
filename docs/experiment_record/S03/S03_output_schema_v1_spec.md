@@ -1,6 +1,6 @@
 # S03 输出契约 v1 结构规格（output_schema_v1）
 
-本文档是 `configs/contracts/output_schema_v1.json` 的人工可读规格说明，两者内容一致；机器校验以 JSON 文件为单一事实源。契约于 Stage 03 冻结，后续仅允许新增版本（v2+），不得原位修改。（注：Schema 与词表文件位于 `configs/contracts/`，原 `configs/model/` 路径已在实现期迁移，`configs/model/` 仅保留模型加载配置。）
+本文档是 `configs/contracts/v1/output_schema.json` 的人工可读规格说明，两者内容一致；机器校验以 JSON 文件为单一事实源。契约于 Stage 03 冻结，后续仅允许新增版本（v2+），不得原位修改。（注：Schema 与词表文件位于 `configs/contracts/`，原 `configs/model/` 路径已在实现期迁移，`configs/model/` 仅保留模型加载配置。）
 
 ## 1. 版本与定位
 

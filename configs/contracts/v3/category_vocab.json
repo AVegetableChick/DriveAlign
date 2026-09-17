@@ -1,6 +1,6 @@
 {
-  "version": "v1",
-  "schema_ref": "output_schema_v2.json#/properties/critical_objects/items.../$defs/critical_object/properties/category",
+  "version": "v3",
+  "schema_ref": "v3/output_schema.json#/properties/critical_objects/items.../$defs/critical_object/properties/category",
   "description": "Closed category vocabulary aligned with the nuScenes detection class set. The parser applies this table deterministically before schema validation; unmapped terms are recorded in ParseResult.unmapped_terms and reported as semantic_range_failure. Generic terms such as 'vehicle' or 'object' are intentionally unmapped because mapping them would be a semantic guess, which the Stage 03 no-silent-repair rule forbids.",
   "unmapped_policy": "record_and_fail",
   "terms": [
