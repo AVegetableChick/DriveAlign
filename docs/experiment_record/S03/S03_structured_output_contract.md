@@ -47,13 +47,15 @@
 
 ## 6. 验证与 Gate
 
-### 6.1 证据链：三轮 sanity 结果（同图、greedy 确定性）
+### 6.1 证据链：五轮 sanity 结果（同图、greedy 确定性）
 
 | 运行轮次 | PROMPT_VERSION | parser 行为 | original | blank | shuffled |
 |---|---|---|---|---|---|
 | 第 1 轮 | v1 | 严格（围栏 = parse failure） | json_parse_failure | json_parse_failure | json_parse_failure |
 | 第 2 轮 | v2 | 严格 | ok（189 tok） | json_parse_failure（128 tok，围栏） | ok（202 tok） |
-| 第 3 轮（最终） | v2 | 严格 + 文档化围栏提取 | ok，extracted=False | ok，**extracted=True** | ok，extracted=False |
+| 第 3 轮（Gate 通过） | v2 | 严格 + 文档化围栏提取 | ok，extracted=False | ok，**extracted=True** | ok，extracted=False |
+| 第 4 轮 | v3 | contract v3（schema v2 + 词表归一层）@ max_new_tokens=256 | json_parse_failure（**256 tok 截断**） | ok（174 tok，围栏） | json_parse_failure（**256 tok 截断**） |
+| 第 5 轮（最终） | v3 | contract v3 @ max_new_tokens=512 | ok（461 tok，8 对象） | ok（174 tok，**extracted=True**） | ok（435 tok，8 对象） |
 
 第 3 轮最终记录（`runs/structured_infer_sanity_check/records.jsonl`，input 2143 tok，do_sample=false，max_new_tokens=256）：
 
@@ -63,6 +65,14 @@
 | blank | ok | True | 128 | 6.64 | KEEP_SPEED | false | 1 |
 | shuffled | ok | False | 202 | 10.69 | DECELERATE | true | 2 |
 
+第 5 轮最终记录（`runs/structured_infer_sanity_check/v3/records.jsonl`，contract v3，do_sample=false，max_new_tokens=512，2026-09-18）：
+
+| sample_id | status | extracted_from_fences | output_tokens | generation_seconds | speed_action | 对象数 | unmapped_terms |
+|---|---|---|---|---|---|---|---|
+| original | ok | False | 461 | 15.78 | DECELERATE | 8 | 0 |
+| blank | ok | True | 174 | 5.43 | DECELERATE | 2 | 0 |
+| shuffled | ok | False | 435 | 13.23 | DECELERATE | 8 | 0 |
+
 ### 6.2 证据链关键事实
 
 1. **第 1 轮 3/3 失败的唯一原因是 markdown 围栏**：三条 raw_text 均以 ` ```json ` 开头；剥除围栏后内容 100% 通过 schema 校验。排除截断（output_tokens 184/145/218 < 256，尾部 `}` 完整）与内容违规。
@@ -70,6 +80,10 @@
 3. **围栏提取规则的决策依据**：S03 文档禁止的是"为提高通过率静默修复未知字段或非法枚举"；围栏提取属**信封解析约定**而非字段修复。实现为：直接解析失败且全文恰为单个 fenced 块时提取重试一次，`extracted_from_fences` 全链路记录（ParseResult → SampleRecord → records.jsonl），内容仍零修复；截断、未闭合、多块围栏仍为 json_parse_failure 且消息注明 "after fence extraction"。
 4. **管线敏感性与确定性**：blank 编造 road 内容并输出 KEEP_SPEED/1 对象，shuffled 输出 DECELERATE + yield=true，original 输出 KEEP_SPEED/2 对象——三变体输出互不相同（敏感性成立）；第 3 轮 original/shuffled 输出与第 2 轮逐 token 一致（greedy 确定性成立）。
 5. **内容质量不做评价**：Base 模型 bbox 粗糙、对象少（如仅 2 车）不构成 Gate 关注点；管线可重复、错误不吞、逐样本可追溯才是本阶段对象。
+6. **第 4 轮截断的根因是生成预算而非契约缺陷**：v3 词表引导模型枚举更多对象（original/shuffled 均 6+ 个、每个对象新增 motion_state ≈ 30 tok），350+ tok 输出被旧的 256 默认预算拦腰截断（两条 raw_text 均恰停在 output_tokens=256，JSON 中途未闭合）；parser 分类正确。修复：CLI 默认预算提至 512（schema 最坏情况 ≈ 400 tok），parser 对不以 `}` 结尾的 json_parse_failure 附加 truncation hint（错误类别不变，commit `33fff03`）。
+7. **prompt v3 词表枚举零未映射**：第 5 轮三变体 `unmapped_terms` 均为空——canonical 词表直接列入 prompt 后，Base 模型在正常输入下未产出词表外词汇；同义词归一层（单复数折叠等）在本轮未被触发，作为确定性兜底保留。
+8. **blank 围栏行为连续 5 轮稳定复现**：退化输入下围栏先验顽固，`extracted_from_fences` 标记的跟踪价值持续成立（后续正式数据统计沿用 §7 注意项 (1)）。
+9. **对象数触及 maxItems 上限的新现象**：第 5 轮 original/shuffled 均输出恰好 8 个对象（满上限），提示 3B Base 可能把 8 当作"目标数量"而非"上限"——该现象对 M09 precision 的影响与 GT 侧规则设计相关，已作为遗留问题单独记录（见 §12 与 [S03_open_questions_for_m09_and_s07.md](S03_open_questions_for_m09_and_s07.md)）。
 
 ### 6.3 Gate 逐条核对
 
@@ -88,6 +102,7 @@
 - 冻结：`output_schema_v1`、`PROMPT_VERSION = "v2"`、parser 错误四分类 + 围栏提取信封规则（含 `extracted_from_fences` 标记）
 - Stage 06 将上述契约接入 `DriveAlignRecord`；Stage 09 才进行正式 Base 内容评测
 - 后续注意：(1) 正式数据统计应跟踪 `extracted_from_fences` 比率，若围栏率异常升高需重审 prompt 或改用结构化解码；(2) `available_speed` 注入路径在本轮未实测，Stage 06 Adapter 接入时需补带速度的 sanity；(3) bbox 坐标系与 DriveLM QA 对齐细节留待 Stage 07 数据构建核对
+- 契约设计遗留问题（maxItems 与 GT 数量的关系、M09 GT 侧规则、DriveLM 分工、信号灯词表缺口、对象数触顶现象）单独记录于 §12 所引文档，需在对应阶段冻结前决策
 
 ## 8. 复现实验命令
 
@@ -98,10 +113,14 @@ cd /root/autodl-tmp/drivealign_workspace
 # 单元测试（无 GPU）
 PYTHONPATH=DriveAlign/src python -m pytest DriveAlign/tests/unit -q
 
-# GPU sanity（三变体，产物写入 runs/structured_infer_sanity_check/）
+# GPU sanity（三变体；默认 contract v3，max_new_tokens=512，
+# 产物写入 runs/structured_infer_sanity_check/v3/）
 PYTHONPATH=DriveAlign/src python -m drivealign.cli.structured_sanity \
   --image data/nuscenes/mini/samples/CAM_FRONT/n008-2018-08-01-15-16-36-0400__CAM_FRONT__1533151603512404.jpg \
-  --out runs/structured_infer_sanity_check
+  --out runs/structured_infer_sanity_check/v3
+
+# 历史配对复现（S03 Gate 第 3 轮 = contract v2）：
+#   追加参数 --contract-version v2 --max-new-tokens 256
 ```
 
 ## 9. 附录：第 3 轮完整记录（prompt 与逐样本输出）
@@ -232,3 +251,7 @@ raw_text（模型原始回复）：
 ## 11. 版本编号对齐说明（提交后增补）
 
 应项目决策,契约版本统一为单一编号:每个 `configs/contracts/v{1,2,3}/` 文件夹自包含该配对的全部冻结产物(`prompt.txt`、`output_schema.json`,v3 另含三个词表)。配对语义:**v1 = prompt v1 + 自由文本 schema**(第一轮 sanity);**v2 = prompt v2 + 自由文本 schema**(本记录的实测配对);**v3 = prompt v3 + 封闭词表 schema**(当前默认)。parser/prompt/runner/records 只使用 `contract_version` 一个编号;`SampleRequest(contract_version="v2")` 可复现本记录第 3 轮实验。旧文件名(`output_schema_v1.json`、`structured_output_v3.txt` 等)已通过 `git mv` 迁移,版本注册表在 `src/drivealign/contracts/versions.py`。
+
+## 12. 遗留问题记录（2026-09-18）
+
+S03 收尾阶段的监督信号分析（GT 有无 × 指标有无）与第 5 轮 sanity 的对象数触顶现象，产出了 5 项契约设计遗留问题（maxItems 与 GT 数量的 recall 天花板、M09 GT 侧确定性几何规则、DriveLM key objects 训练/评测分工、交通信号灯词表缺口、对象数触顶监控），**单独记录于 [S03_open_questions_for_m09_and_s07.md](S03_open_questions_for_m09_and_s07.md)**，均须在对应阶段规则冻结前决策。

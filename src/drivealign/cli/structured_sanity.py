@@ -25,6 +25,7 @@ import torch
 import yaml
 from PIL import Image
 
+from drivealign.contracts.versions import AVAILABLE_CONTRACT_VERSIONS
 from drivealign.inference.model_loader import load_model_and_processor
 from drivealign.inference.structured_runner import (
     SampleRequest,
@@ -56,6 +57,13 @@ def _parse_args() -> argparse.Namespace:
         default=512,
     )
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument(
+        "--contract-version",
+        choices=AVAILABLE_CONTRACT_VERSIONS,
+        # v3 is the current frozen pairing (prompt v3 + schema v2 + vocab
+        # normalization); pass "v2" to reproduce the S03 Gate round-3 run.
+        default="v3",
+    )
     return parser.parse_args()
 
 
@@ -86,9 +94,24 @@ def main() -> None:
     generation_config = {"max_new_tokens": args.max_new_tokens}
 
     requests = [
-        SampleRequest("original", image_path, image_size=(width, height)),
-        SampleRequest("blank", blank_path, image_size=(width, height)),
-        SampleRequest("shuffled", shuffled_path, image_size=(width, height)),
+        SampleRequest(
+            "original",
+            image_path,
+            image_size=(width, height),
+            contract_version=args.contract_version,
+        ),
+        SampleRequest(
+            "blank",
+            blank_path,
+            image_size=(width, height),
+            contract_version=args.contract_version,
+        ),
+        SampleRequest(
+            "shuffled",
+            shuffled_path,
+            image_size=(width, height),
+            contract_version=args.contract_version,
+        ),
     ]
     records = run_structured_batch(loaded, requests, generation_config=generation_config)
 
