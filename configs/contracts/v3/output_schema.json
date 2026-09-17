@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://drivealign.local/schemas/contracts/v3/output_schema.json",
-  "title": "DriveAlign structured driving output contract v2",
-  "description": "Single-image driving scene analysis output contract. Changes from v1: (1) coarse_position removed from the generation contract and derived by the parser from bbox_2d plus image size; (2) category closed over the nuScenes detection class set, canonical terms in configs/model/category_vocab_v1.json; (3) risk_factors closed over configs/model/risk_taxonomy_v1.json; (4) behavior replaced by motion_state enum defined in configs/model/motion_vocab_v1.json; (5) critical_objects capped at 8 items; (6) risk_factors must be unique. bbox_2d is [x_min, y_min, x_max, y_max] in absolute input-image pixel coordinates, origin top-left. Open-vocabulary model results are normalized by the versioned synonym tables; unmapped terms are recorded, never silently repaired.",
+  "title": "DriveAlign structured driving output contract v3",
+  "description": "Single-image driving scene analysis output contract. Changes from v1: (1) coarse_position removed from the generation contract and derived by the parser from bbox_2d plus image size; (2) category closed over the nuScenes detection class set, canonical terms in configs/contracts/v3/category_vocab.json; (3) risk_factors closed over configs/contracts/v3/risk_taxonomy.json; (4) behavior replaced by motion_state enum defined in configs/contracts/v3/motion_vocab.json; (5) critical_objects capped at 8 items; (6) risk_factors must be unique. bbox_2d is [x_min, y_min, x_max, y_max] in absolute input-image pixel coordinates, origin top-left. Open-vocabulary model results are normalized by the versioned synonym tables; unmapped terms are recorded, never silently repaired.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -22,7 +22,7 @@
       }
     },
     "risk_factors": {
-      "description": "Closed risk taxonomy; each item must be a canonical term from configs/model/risk_taxonomy_v1.json (synonyms are normalized by the parser before validation). Empty list allowed; duplicates not allowed.",
+      "description": "Closed risk taxonomy; each item must be a canonical term from configs/contracts/v3/risk_taxonomy.json (synonyms are normalized by the parser before validation). Empty list allowed; duplicates not allowed.",
       "type": "array",
       "maxItems": 8,
       "uniqueItems": true,
@@ -70,7 +70,7 @@
       ],
       "properties": {
         "category": {
-          "description": "Canonical category from the nuScenes detection class set; synonyms normalized via configs/model/category_vocab_v1.json.",
+          "description": "Canonical category from the nuScenes detection class set; synonyms normalized via configs/contracts/v3/category_vocab.json.",
           "type": "string",
           "enum": [
             "car",
@@ -111,7 +111,7 @@
           "maxItems": 4
         },
         "motion_state": {
-          "description": "Coarse motion state; ground truth derivable from nuScenes box velocity relative to ego. Canonical values defined in configs/model/motion_vocab_v1.json.",
+          "description": "Coarse motion state; ground truth derivable from nuScenes box velocity relative to ego. Canonical values defined in configs/contracts/v3/motion_vocab.json.",
           "type": "string",
           "enum": [
             "stationary",
