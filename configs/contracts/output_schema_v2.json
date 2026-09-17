@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://drivealign.local/schemas/output_schema_v2.json",
+  "title": "DriveAlign structured driving output contract v2",
+  "description": "Single-image driving scene analysis output contract. Changes from v1: (1) coarse_position removed from the generation contract and derived by the parser from bbox_2d plus image size; (2) category closed over the nuScenes detection class set, canonical terms in configs/model/category_vocab_v1.json; (3) risk_factors closed over configs/model/risk_taxonomy_v1.json; (4) behavior replaced by motion_state enum defined in configs/model/motion_vocab_v1.json; (5) critical_objects capped at 8 items; (6) risk_factors must be unique. bbox_2d is [x_min, y_min, x_max, y_max] in absolute input-image pixel coordinates, origin top-left. Open-vocabulary model results are normalized by the versioned synonym tables; unmapped terms are recorded, never silently repaired.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "critical_objects",
+    "risk_factors",
+    "reasoning",
+    "yield_required",
+    "speed_action"
+  ],
+  "properties": {
+    "critical_objects": {
+      "description": "Objects relevant to the current driving decision. Empty list allowed. Hard cap of 8 items keeps token length and scoring deterministic.",
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "$ref": "#/$defs/critical_object"
+      }
+    },
+    "risk_factors": {
+      "description": "Closed risk taxonomy; each item must be a canonical term from configs/model/risk_taxonomy_v1.json (synonyms are normalized by the parser before validation). Empty list allowed; duplicates not allowed.",
+      "type": "array",
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": [
+          "pedestrian_crossing",
+          "vehicle_merging",
+          "lead_vehicle_braking",
+          "corridor_conflict",
+          "small_following_gap",
+          "stationary_obstacle",
+          "congestion",
+          "oncoming_traffic"
+        ]
+      }
+    },
+    "reasoning": {
+      "description": "Concise explanation grounded in the current image and the available ego speed, if provided. Free text by design: never scored for content, format constraint only.",
+      "type": "string",
+      "minLength": 1
+    },
+    "yield_required": {
+      "description": "True when the ego vehicle should yield to another road user or situation.",
+      "type": "boolean"
+    },
+    "speed_action": {
+      "description": "Requested speed control action. Ground truth for evaluation is derived from future physics by the M09 oracle.",
+      "enum": [
+        "ACCELERATE",
+        "KEEP_SPEED",
+        "DECELERATE",
+        "STOP"
+      ]
+    }
+  },
+  "$defs": {
+    "critical_object": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "category",
+        "bbox_2d",
+        "motion_state"
+      ],
+      "properties": {
+        "category": {
+          "description": "Canonical category from the nuScenes detection class set; synonyms normalized via configs/model/category_vocab_v1.json.",
+          "type": "string",
+          "enum": [
+            "car",
+            "truck",
+            "construction_vehicle",
+            "bus",
+            "trailer",
+            "barrier",
+            "motorcycle",
+            "bicycle",
+            "pedestrian",
+            "traffic_cone"
+          ]
+        },
+        "bbox_2d": {
+          "description": "[x_min, y_min, x_max, y_max] in absolute input-image pixel coordinates, origin top-left. Corner-order and image-bounds checks are applied by the parser as semantic validation.",
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "number",
+              "minimum": 0
+            }
+          ],
+          "items": false,
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "motion_state": {
+          "description": "Coarse motion state; ground truth derivable from nuScenes box velocity relative to ego. Canonical values defined in configs/model/motion_vocab_v1.json.",
+          "type": "string",
+          "enum": [
+            "stationary",
+            "same_direction",
+            "oncoming",
+            "crossing"
+          ]
+        }
+      }
+    }
+  }
+}

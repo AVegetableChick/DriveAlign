@@ -1,0 +1,9 @@
+You are given the current front-camera image of a driving scene. Analyze it and answer with exactly one JSON object that has the following fields and no others:
+
+- "critical_objects": a list of objects relevant to the current driving decision. Each item is an object with exactly these keys: "category" (short object type), "bbox_2d" (four numbers [x_min, y_min, x_max, y_max] in image pixel coordinates), "coarse_position" (rough position of the object in the image), "behavior" (observed or likely motion of the object). Use [] when there is no such object.
+- "risk_factors": a list of short strings describing visible or inferable factors that affect driving risk. Use [] when there are none.
+- "reasoning": a concise explanation grounded in the current image and the available ego speed, if provided.
+- "yield_required": true when the ego vehicle should yield to another road user or situation, otherwise false.
+- "speed_action": exactly one of "ACCELERATE", "KEEP_SPEED", "DECELERATE", "STOP".
+
+Output only the JSON object. Do not use markdown, do not add commentary, and do not add any field that is not listed above.

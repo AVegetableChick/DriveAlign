@@ -1,0 +1,59 @@
+{
+  "version": "v1",
+  "schema_ref": "output_schema_v2.json#/properties/critical_objects/items.../$defs/critical_object/properties/category",
+  "description": "Closed category vocabulary aligned with the nuScenes detection class set. The parser applies this table deterministically before schema validation; unmapped terms are recorded in ParseResult.unmapped_terms and reported as semantic_range_failure. Generic terms such as 'vehicle' or 'object' are intentionally unmapped because mapping them would be a semantic guess, which the Stage 03 no-silent-repair rule forbids.",
+  "unmapped_policy": "record_and_fail",
+  "terms": [
+    {
+      "canonical": "car",
+      "synonyms": ["suv", "sedan", "hatchback", "van", "minivan", "taxi", "coupe", "passenger car"],
+      "gt_source": "nuScenes GT box class 'car', projected to CAM_FRONT"
+    },
+    {
+      "canonical": "truck",
+      "synonyms": ["pickup", "lorry", "dump truck", "delivery truck", "box truck"],
+      "gt_source": "nuScenes GT box class 'truck', projected to CAM_FRONT"
+    },
+    {
+      "canonical": "construction_vehicle",
+      "synonyms": ["excavator", "bulldozer", "crane", "construction vehicle", "roadwork vehicle"],
+      "gt_source": "nuScenes GT box class 'construction_vehicle', projected to CAM_FRONT"
+    },
+    {
+      "canonical": "bus",
+      "synonyms": ["minibus", "coach", "shuttle bus", "city bus"],
+      "gt_source": "nuScenes GT box class 'bus', projected to CAM_FRONT"
+    },
+    {
+      "canonical": "trailer",
+      "synonyms": ["semi-trailer", "semi", "caravan", "trailer truck"],
+      "gt_source": "nuScenes GT box class 'trailer', projected to CAM_FRONT"
+    },
+    {
+      "canonical": "barrier",
+      "synonyms": ["barricade", "road barrier", "construction barrier", "guardrail segment"],
+      "gt_source": "nuScenes GT box class 'barrier', projected to CAM_FRONT"
+    },
+    {
+      "canonical": "motorcycle",
+      "synonyms": ["motorbike", "motorcyclist", "moped", "scooter"],
+      "gt_source": "nuScenes GT box class 'motorcycle' (includes rider), projected to CAM_FRONT"
+    },
+    {
+      "canonical": "bicycle",
+      "synonyms": ["bike", "cyclist", "biker", "bicycle rider"],
+      "gt_source": "nuScenes GT box class 'bicycle' (includes rider), projected to CAM_FRONT"
+    },
+    {
+      "canonical": "pedestrian",
+      "synonyms": ["person", "walker", "jaywalker", "man", "woman", "child"],
+      "gt_source": "nuScenes GT box class 'pedestrian', projected to CAM_FRONT"
+    },
+    {
+      "canonical": "traffic_cone",
+      "synonyms": ["cone", "traffic cones", "safety cone", "road cone"],
+      "gt_source": "nuScenes GT box class 'traffic_cone', projected to CAM_FRONT"
+    }
+  ],
+  "intentionally_unmapped": ["vehicle", "object", "moving object", "traffic"]
+}

@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://drivealign.local/schemas/output_schema_v1.json",
+  "title": "DriveAlign Structured Driving Output",
+  "description": "Version 1 structured output contract for single-image driving scene analysis.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "critical_objects",
+    "risk_factors",
+    "reasoning",
+    "yield_required",
+    "speed_action"
+  ],
+  "properties": {
+    "critical_objects": {
+      "type": "array",
+      "description": "Objects that are relevant to the current driving decision.",
+      "items": {
+        "$ref": "#/$defs/critical_object"
+      }
+    },
+    "risk_factors": {
+      "type": "array",
+      "description": "Visible or inferable factors that affect driving risk.",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "reasoning": {
+      "type": "string",
+      "description": "Concise explanation grounded in the current image and available state.",
+      "minLength": 1
+    },
+    "yield_required": {
+      "type": "boolean",
+      "description": "Whether the vehicle should yield to another road user or situation."
+    },
+    "speed_action": {
+      "type": "string",
+      "description": "The requested speed control action.",
+      "enum": [
+        "ACCELERATE",
+        "KEEP_SPEED",
+        "DECELERATE",
+        "STOP"
+      ]
+    }
+  },
+  "$defs": {
+    "critical_object": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "category",
+        "bbox_2d",
+        "coarse_position",
+        "behavior"
+      ],
+      "properties": {
+        "category": {
+          "type": "string",
+          "minLength": 1
+        },
+        "bbox_2d": {
+          "type": "array",
+          "description": "Image coordinates in [x_min, y_min, x_max, y_max] order.",
+          "prefixItems": [
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "number",
+              "minimum": 0
+            }
+          ],
+          "items": false,
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "coarse_position": {
+          "type": "string",
+          "minLength": 1
+        },
+        "behavior": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

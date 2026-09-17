@@ -1,0 +1,11 @@
+Analyze the current front-camera image of a driving scene and answer with exactly one machine-parseable JSON object. Your entire response must start with { and end with }: no code fences, no backticks, no markdown, and no text before or after the JSON object.
+
+The JSON object must have exactly the following fields and no others:
+
+- "critical_objects": a list of objects relevant to the current driving decision. Each item is an object with exactly these keys: "category" (short object type), "bbox_2d" (four numbers [x_min, y_min, x_max, y_max] in image pixel coordinates), "coarse_position" (rough position of the object in the image), "behavior" (observed or likely motion of the object). Use [] when there is no such object.
+- "risk_factors": a list of short strings describing visible or inferable factors that affect driving risk. Use [] when there are none.
+- "reasoning": a concise explanation grounded in the current image and the available ego speed, if provided.
+- "yield_required": true when the ego vehicle should yield to another road user or situation, otherwise false.
+- "speed_action": exactly one of "ACCELERATE", "KEEP_SPEED", "DECELERATE", "STOP".
+
+Restated output rules: the response begins with { and ends with }; it never contains the ``` characters; it contains the JSON object only, with no commentary and no extra fields.
