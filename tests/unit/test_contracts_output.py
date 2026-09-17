@@ -353,6 +353,15 @@ def test_v1_payload_fails_under_default_v3_schema():
     assert {e.category for e in result.errors} == {OutputErrorCategory.SCHEMA_FAILURE}
 
 
+def test_truncated_json_reports_budget_hint():
+    truncated = json.dumps(VALID_SAMPLE)[:-40]
+    result = parse_v1(truncated)
+    assert not result.ok
+    (error,) = result.errors
+    assert error.category is OutputErrorCategory.JSON_PARSE_FAILURE
+    assert "truncated" in error.message
+
+
 def test_v1_round_trip_still_works_with_explicit_version():
     parsed = parse_v1(json.dumps(VALID_SAMPLE))
     reparsed = parse_v1(json.dumps(parsed.output.to_dict()))

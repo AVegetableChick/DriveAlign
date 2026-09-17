@@ -48,7 +48,13 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--image", type=Path, default=Path(DEFAULT_IMAGE))
     parser.add_argument("--config", type=Path, default=Path(DEFAULT_CONFIG))
     parser.add_argument("--out", type=Path, default=Path(DEFAULT_OUT))
-    parser.add_argument("--max-new-tokens", type=int, default=256)
+    parser.add_argument(
+        "--max-new-tokens",
+        type=int,
+        # Contract v3 outputs enumerate up to 8 objects with motion_state
+        # (~400 tokens worst case); 256 truncated the 2026-09-18 v3 sanity run.
+        default=512,
+    )
     parser.add_argument("--seed", type=int, default=0)
     return parser.parse_args()
 

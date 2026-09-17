@@ -438,11 +438,17 @@ def parse_structured_output(
 
     if payload is None:
         suffix = " after fence extraction" if fence_attempted else ""
+        hint = ""
+        if isinstance(raw_text, str) and not raw_text.rstrip().endswith("}"):
+            hint = (
+                " (raw text does not end with '}': output looks truncated, "
+                "check the generation token budget)"
+            )
         return _fail(
             (
                 OutputContractError(
                     category=OutputErrorCategory.JSON_PARSE_FAILURE,
-                    message=f"Raw text is not valid JSON{suffix}: {parse_error}",
+                    message=f"Raw text is not valid JSON{suffix}: {parse_error}{hint}",
                 ),
             ),
             raw_text,
