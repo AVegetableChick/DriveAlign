@@ -34,9 +34,9 @@ DriveAlignRecord
 │   │   └── time_offset_s   # 相对 anchor，anchor=0.0，精度 6 位
 │   └── ego_speed_mps      # backward difference：当前帧 vs frames[-2] ego pose
 │                          # 的 planar (x,y) 位移差 / 0.5s，只用过去，精度 3 位，非负
-├── training_targets      # 最终监督标签（S07/S08 填充，此前为 None）
-│   ├── expected_output     # dict|None（S08 填充）
-│   └── language_reference  # dict|None（S07 DriveLM join 填充）
+├── training_targets      # 最终监督标签（S08 填充，此前为 None）
+│   ├── expected_output     # dict|None（S08 填充：结构 GT + reasoning 模板渲染）
+│   └── language_reference  # dict|None（v1 预留；D7 后默认 None，增强包启用时填充）
 ├── oracle_only           # 未来证据，永不进入模型输入
 │   └── future_ego_poses    # 沿 sample.next 走 6 帧（3.0s @ 2Hz，已确认）；
 │                           # scene 末尾自然截断，不视为 quarantine
@@ -72,7 +72,7 @@ DriveAlignRecord
 
 ## 6. 遗留与交接
 
-- `training_targets` 两字段在 S06 恒为 None，S07（DriveLM join）/ S08 填充。
+- `training_targets` 两字段在 S06 恒为 None；D7（2026-10-01）后由 S08 填充 `expected_output`（reasoning 模板渲染同属 S08），`language_reference` 为 v1 预留字段（默认 None，可选增强包启用时填充）。
 - adapter（Step 2）已落地：`BuildResult(record | reason_code)`，quarantine 分类 = `nuscenes_io` 六个 reason code + `MISSING_CALIBRATION` + `NUMERIC_ANOMALY`，详见 `S06_adapter.md`。
 - serializer（Step 3）已落地：从 `model_inputs` 派生 1F/4F 请求，prompt 恒取 v3 冻结文本，详见 `S06_serializer.md`。
 - 单测（Step 4，91 passed）与 CLI 冒烟（Step 5/6，31 disjoint 窗口五项 gate 全绿 + rerun diff 一致）已完成，执行流程与 gate 结果见 `S06_record_build_smoke.md`。

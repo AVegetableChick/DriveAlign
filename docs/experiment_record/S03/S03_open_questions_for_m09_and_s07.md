@@ -36,22 +36,42 @@
 
 ## Q3 DriveLM key objects 的分工确认(训练侧专用)
 
+> **状态更新(2026-09-30)**:与用户两轮质询讨论后修正论证,原"三理由"版本作废,结论不变:key objects 只当老师(`training_targets` 语言参考),不当裁判(评测 GT)。
+
 **背景**:Stage 07 计划 join DriveLM QA 作为数据源之一,其中 key objects 是核心资产。需明确它**只进训练管线,不进评测管线**。
 
 **分工**:
 | | 训练管线(Stage 07) | 评测管线(Stage 08 M09) |
 |---|---|---|
-| 关键目标来源 | DriveLM key objects(人判标准) | nuScenes 3D GT 投影 + Q2 几何规则 |
+| 关键目标来源 | DriveLM key objects(人判选择 + 描述语言) | nuScenes 3D GT 投影 + Q2 几何规则 |
+| bbox 几何 | 全部来自 nuScenes GT(点→框匹配派生) | nuScenes GT |
 | 用途 | 语言参考:教模型提到什么、怎么描述 | 判分 GT:P/R/F1、IoU |
 | namespace | `training_targets` | `oracle_only` |
 
-**M09 不能用 DriveLM key objects 当 GT 的三个理由**:
-1. **覆盖率**:DriveLM 只标注选定 keyframe(ego 运动状态变化帧),nuScenes 大部分帧无标注;
-2. **不确定性**:对象选择是标注员主观判断,违反 M09 确定性/可版本化/可归因要求;
-3. **几何不足**:DriveLM 给中心点 `<c, CAM, x, y>` + 自由文本,无 bbox,算不了 IoU。
+**推论**:DriveAlign 系统内一切 bbox 几何 100% 来自 nuScenes GT,训练侧与评测侧皆然;DriveLM 在 join 中的独特贡献只剩**选择**(哪些对象值得提)与**描述语言**。
 
-**一致性说明**:SFT 教模型关注"人判相关"的对象,M09 用几何代理打分;两者多数帧一致,分歧帧以几何规则为准——研究可归因性的必要代价。
-**决策期限**:无需新决策,作为 Stage 06/07 实现时的执行约定。
+**M09 评测 GT 资格清单(4 条,按硬度排序)与 DriveLM 对照**:
+1. **版本化规则可派生**:GT 必须能从物理真值用规则程序重新生成。DriveLM ✗——固定的人判快照不可再生成(数据本身无随机性,"固定 ≠ 可派生",指控的是派生过程不存在);
+2. **任意 anchor 帧可计算**:缺席只能是规则性缺席(unscorable,如 Stage 08 的风险/action 派生),不能是数据缺席。DriveLM ✗——仅 ~3.8k 个选定 keyframe 有标注,且无法扩展;
+3. **bbox 几何**:DriveLM ✗——key object 格式为 `<cN, CAM_FRONT, x_pixel, y_pixel>` 像素中心点 + `Visual_description` 自由文本(代码证据:`third_party/AutoVLA/tools/preprocessing/nusc_sample_generation.py` L447-451 仅做字符串替换,全程无框几何);*(2026-10-01 修正:见下方事实更新,本条论据失效)*
+4. **与训练监督构造性隔离**:DriveLM ✗(本项目处境下)——公开标注(`v1_1_train_nus.json`)仅覆盖 nuScenes train split,评测域 trainval 中不存在"DriveLM 已标注且未参与训练"的 held-out 区域(nuScenes val 无 DriveLM 标注,test 无公开 GT)。*(2026-10-01 修正:见下方事实更新,论据需改写,结论不变)*
+
+**已否决/降级的论点(避免将来重提)**:
+- 点匹配(模型 bbox 包含中心点即命中):激励画大框刷 recall,且救不了理由 1/2;
+- "DriveLM 数据不确定/随机":不成立,它是固定数据;正确指控是"不可由规则派生";
+- "同源即循环论证":降级——split 隔离的同源标注是标准 ML 实践;本项目否决同源路线的原因是 held-out 区域数据不存在,不是方法论缺陷。
+
+**旁证**:DriveLM 官方 challenge 也未把 key objects 当几何 GT(评测用 GPT 语言打分 + nuScenes GT 轨迹指标)。
+
+**一致性说明**:SFT 教模型关注"人判相关"的对象,M09 用几何规则打分;两者多数帧一致,分歧帧以几何规则为准——研究可归因性的必要代价。
+**决策期限**:无需新决策,作为 Stage 06/07 实现时的执行约定;其中"test 从 nuScenes val split 划分"与"点→框匹配 join 机制"已写入 Stage 07 计划。
+
+**事实更新(2026-10-01,DriveLM v1.1 文件实测后)**:
+1. **v1.1 key_object_infos 自带 2D bbox**(`"2d_bbox": [x1, y1, x2, y2]` 像素框,附带 Category/Status/Visual_description)——上面资格清单**第 3 条论据失效**(v1.0 时代"只有中心点"的认知过时)。
+2. **v1.1 提供 val split 标注**(`v1_1_val_nus.json` 存在于公开下载列表)——**第 4 条论据改写**:held-out 数据并非不存在,而是**本项目选择不引入**。
+3. **结论不变**:评测 GT 资格由第 1 条(人工 QA 不可由版本化规则派生)与第 2 条(标注覆盖 14.5%,任意 anchor 不可计算)独立锁定,第 3/4 条失效不影响否决。key objects 仍为训练侧专用。
+4. **训练侧 join 影响已决(2026-10-01,见 S07 输入验证记录 D1)**:全部 bbox(含 `language_reference`)一律用 nuScenes 3D 投影外接框,DriveLM `2d_bbox` 不进任何输出层——回归本 Q3 原推论"一切 bbox 几何 100% 来自 nuScenes GT"。DriveLM 贡献收缩为纯语言(Visual_description + QA → reasoning 素材),其"人判选择"倾向保留在 reasoning 文本层;两源重合度已抽样验证(IoU median 0.825)。
+5. **val 版下载决策**:**不下载**。test 隔离由构造性保证(构建流水线输入中物理不含 DriveLM val 文件),强于"约定不使用";未来语言评测扩展阶段若需 reference 可再评估,届时以 scene manifest 做隔离。*(2026-10-01 补充实测:公开 val 版仅含 question 无 answer——challenge 提交格式,答案在官方侧。答案侧语义信息根本不存在,作为评测 GT/参考的资格彻底关闭;第 1 条论据在 val 上以最强形式成立。)*
 
 ## Q4 交通信号灯的词表缺口
 
