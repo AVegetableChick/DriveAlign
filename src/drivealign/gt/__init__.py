@@ -3,7 +3,7 @@
 Purpose:
     Deterministic derivation of the ``training_targets.expected_output`` GT
     from nuScenes evidence, implementing the frozen S08 decision ledger
-    (``docs/experiment_record/S08/S08_pre_implementation_decisions.md``):
+    (``docs/experiment_record/S08_gt_backfill/S08_pre_implementation_decisions.md``):
 
     - ``observability``: three-state gating (observable / inferable /
       unscorable) from 8-corner projection with a behind check FIRST; only

@@ -1,6 +1,6 @@
 # AutoVLA nuScenes Preprocessing 字段映射（Reference）
 
-- 上游：pinned checkout `third_party/AutoVLA`，入口 `tools/preprocessing/nusc_sample_generation.py`（命令与跳过逻辑见 `docs/experiment_record/S05/S05_preprocessing_smoke_record.md`）
+- 上游：pinned checkout `third_party/AutoVLA`，入口 `tools/preprocessing/nusc_sample_generation.py`（命令与跳过逻辑见 `docs/experiment_record/S05_data_preprocessing/S05_preprocessing_smoke_record.md`）
 - 验证数据：mini v1.0 train split 164 样本（2026-09-29 smoke，确定性重跑逐字节一致）
 - policy 取值：**复用**（进入 DriveAlign）/ **target only**（仅训练监督侧）/ **Reference only**（记录契约，禁止进入 DriveAlign 输入）
 
@@ -31,4 +31,4 @@
 ## 3. 使用说明
 
 - Stage 06 构建 DriveAlign 训练集时，只搬运标记**复用**的路径与契约，重新实施因果白名单。
-- 本表与 `references/autovla_loader_batch_format.md`（batch 格式）、`docs/experiment_record/S05/`（执行记录）互为索引。
+- 本表与 `references/autovla_loader_batch_format.md`（batch 格式）、`docs/experiment_record/S05_data_preprocessing/`（执行记录）互为索引。

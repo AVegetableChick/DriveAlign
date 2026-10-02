@@ -200,7 +200,7 @@ S08 的任务：给数据集的每一帧画面打"标准答案"（GT）——每
 | 冻结配置（全部数值的唯一来源） | `configs/contracts/v4/gt_rule_config.json` |
 | 标定原始报告（五族网格全表） | `runs/S08_gt_backfill/calibration_report.{json,md}` |
 | 截断验证报告（族①豁免证据） | `runs/S08_gt_backfill/truncation_risk_report.{json,md}` |
-| 标定判读长文 | `docs/experiment_record/S08/S08_calibration_report.md` |
+| 标定判读长文 | `docs/experiment_record/S08_gt_backfill/S08_calibration_report.md` |
 | 标定 CLI / 截断验证 CLI | `src/drivealign/cli/gt_calibration.py` / `gt_truncation_check.py`（均 train-only，docstring 含 tmux 启动命令） |
 | 提交 | commit `47b5e0a`，179 单测绿 |
 

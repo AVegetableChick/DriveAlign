@@ -5,7 +5,7 @@
 
 ## 0. 前置快照（Step 0）
 
-未提交：`docs/experiment_record/S08/`（决策台账 + 本规划）+ `docs/codebase/05_DriveAlign_Project_Structure_and_Execution_Blueprint_v1.md`（observability 三态修订）。先提交一次决策快照再开工代码，回滚边界清晰：
+未提交：`docs/experiment_record/S08_gt_backfill/`（决策台账 + 本规划）+ `docs/codebase/05_DriveAlign_Project_Structure_and_Execution_Blueprint_v1.md`（observability 三态修订）。先提交一次决策快照再开工代码，回滚边界清晰：
 
 ```
 git add docs/experiment_record/S08 docs/codebase/05_DriveAlign_Project_Structure_and_Execution_Blueprint_v1.md
@@ -88,7 +88,7 @@ git commit -m "[Docs] S08 pre-implementation decisions and implementation plan"
 | 3 | build_dataset v4 回填改造 + 冒烟（`--max-scenes 2 --out runs/S08_gt_backfill/smoke_out`）+ 冒烟级 parity 预验（冒烟 anchor token 与 v3 manifest 对比） | agent，sandbox |
 | 4 | 全量 v4 重建：新物理目录 `/root/autodl-tmp/datasets/drivealign_dataset/v4` + 新 symlink `data/dataset_v4`（**命名裁定**：dataset 目录跟 contract 代际走，v4=contract v4 产物；`dataset_v1` 为历史错位——实为 contract v3 产物，本轮不改名，作为已知命名错位记录。v1 只读保留，parity diff 与回滚依赖） | **用户，tmux** |
 | 5 | Gates 全套（§6）+ observability/coverage 按 split 报告 → `runs/S08_gt_backfill/` | agent，sandbox |
-| 6 | 实验记录落 `docs/experiment_record/S08/` + git commit | agent |
+| 6 | 实验记录落 `docs/experiment_record/S08_gt_backfill/` + git commit | agent |
 
 标准命令模板（Step 2 示例，Step 4 同构换模块名与日志路径）：
 
