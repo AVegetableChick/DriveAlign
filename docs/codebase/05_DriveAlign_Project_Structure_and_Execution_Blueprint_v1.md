@@ -406,7 +406,7 @@ Gate 6：三个 split 的 scene 交集为空；100% raw candidates 可解释；�
 操作：
 
 1. 投影 CAM_FRONT GT box；
-2. 标记 observable、inferable、privileged、unscorable；
+2. 标记 observable、inferable、unscorable（三态；privileged 因 GT 派生全面改为 t0 证据口径而恒空，2026-10-02 删除，见 S08 决策台账）；
 3. 使用 Hungarian matching 一对一匹配；
 4. 派生 action、yield、future corridor conflict 和 minimum future distance；
 5. 运行视觉反事实测试；
