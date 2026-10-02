@@ -74,7 +74,7 @@ git commit -m "[Docs] S08 pre-implementation decisions and implementation plan"
 2. **corridor 族**：T_risk {2,3,4,6}s × d_risk（行人/车辆分设网格）→ 冲突检出率（稀疏性检查：过高=无区分度，过低=GT 饥饿）。
 3. **motion**：θ {30,45,60}° × stationary {0.3,0.5,0.8} m/s → 四值分布。
 4. **action**：W_act {2,3,4}s × δ {0.1,0.15,0.2} → 四动作占比（与 expert 行为分布比对）。
-5. **gap**：间距 {2,4,6,8}m / 时间间隔 {0.5,1,1.5,2}s → 检出率。
+5. ~~**gap**：间距 {2,4,6,8}m / 时间间隔 {0.5,1,1.5,2}s → 检出率。~~（**已移除**：实测检出 ≤0.64%，饥饿标签，`small_following_gap` 从 taxonomy 全链路删除，见 §9）
 
 硬约束：只读 train scene manifest 与 nuScenes，val/test 不进任何 fitted state；标定代码路径须可审计（§6.6）。
 
@@ -120,3 +120,33 @@ tmux new-session -d -s s08_calib \
 ## 8. 交接（完成后）
 
 记录 `m09_version`、oracle/config hash、contract v4 指纹、GT 填全报告、标定报告路径与冻结数值表。Stage 09/10 配置须同时预注册，之后不得据单帧 test 结果改多帧评测条件。
+
+## 9. Step 2 冻结记录（2026-10-02）
+
+### 9.1 五族定值（用户拍板 + 标定证据）
+
+| 参数族 | 冻结值 | 依据 |
+|---|---|---|
+| ① 池几何 | 锥半角 30°，近距盘 15 m，类别距离 ×0.75（vehicle 45 / pedestrian 30 / static 15 m） | 用户决策（方案 A：收距离上限替代加权打分）；加权打分方案因"静止前车速度项陷阱/权重无判据/截断语义劣化"被否决 |
+| ② corridor 族 | T_risk 3.0 s，d_risk 车辆 3.0 m、行人 2.0 m | 用户决策（加大危险距离），标定网格实测 (3.0,3.0,2.0) 检出 25.25%/2.25%/23.86% 无饥饿 |
+| ③ motion | θ 半带宽 45°，stationary 0.5 m/s | 用户决策（固定值） |
+| ④ action | 窗口 3.0 s（6 帧），δ=0.15（**相对值**：窗内 min < 0.85·v0 → DECELERATE，max > 1.15·v0 → ACCELERATE，min < 0.5 → STOP） | 用户决策（冻结），δ 语义已澄清 |
+| ⑤ gap | **移除** | 实测检出 ≤0.64%（饥饿）；taxonomy 8→7 项，output_schema/phrase_map/risk_taxonomy/config/CLI/测试全链路同步 |
+
+### 9.2 截断豁免（visibility-first 已知限制）
+
+池几何 (30°, 15 m, ×0.75) 的截断帧率 **11.33%**（2,655/23,425），超 5% 硬目标；cap=10 方案因牵动模型面 `maxItems` 契约被否决，改为补验证跑量化代价：
+
+- 验证 CLI：`cli/gt_truncation_check.py`（train-only，复用冻结 corridor 参数）
+- 全量结果（`runs/S08_gt_backfill/truncation_risk_report.{json,md}`，23,425 anchors）：
+  - 被截断对象 9,249 个（截断帧均值 3.48），距离 P50=33 m / P90=42 m——确为最远者；
+  - 仅 **4.53%**（419 个）触发 corridor 冲突（行人 38 / 车辆组 87 / 静态类 294）；
+  - **漏检帧 26 / 23,425 = 0.111%**（截断帧内 0.98%）——即解除 top-8 上限后 `yield_required` 会翻 True 的全部帧。
+- 裁定：0.111% 远低于 0.5% 预期线，作为 visibility-first 原则下的已知限制记录（与"视野外真实冲突不记录"同列），豁免成立。
+
+### 9.3 资产状态
+
+- `gt_rule_config.json`：`status` **provisional → frozen**，description 记录标定与验证来源；
+- 单测 179 passed（含 gap 移除、v4 升级、池几何定值后的回归修正）；
+- 标定/验证冒烟均在真实 trainval 2 场景跑通（`runs/S08_gt_backfill/*smoke*`）。
+- 下一步：Step 3 build_dataset v4 回填改造（sandbox）→ Step 4 全量重建（用户 tmux，`/root/autodl-tmp/datasets/drivealign_dataset/v4` + symlink `data/dataset_v4`）。

@@ -197,7 +197,7 @@ def test_prompt_with_speed_only_prepends_one_line():
 
 
 def test_default_contract_version_is_frozen():
-    assert DEFAULT_CONTRACT_VERSION == "v3"
+    assert DEFAULT_CONTRACT_VERSION == "v4"
 
 
 def test_prompt_v2_states_envelope_rules_explicitly():
@@ -247,7 +247,6 @@ def test_prompt_v3_lists_closed_vocabulary():
         "vehicle_merging",
         "lead_vehicle_braking",
         "corridor_conflict",
-        "small_following_gap",
         "stationary_obstacle",
         "congestion",
         "oncoming_traffic",
@@ -271,17 +270,17 @@ V2_VALID_SAMPLE = {
             "motion_state": "same_direction",
         }
     ],
-    "risk_factors": ["small_following_gap"],
+    "risk_factors": ["congestion"],
     "reasoning": "Car ahead is moving; keep speed and monitor.",
     "yield_required": False,
     "speed_action": "KEEP_SPEED",
 }
 
 
-def test_default_contract_is_v3_and_parses_ok():
+def test_default_contract_is_v4_and_parses_ok():
     result = parse_structured_output(json.dumps(V2_VALID_SAMPLE))
     assert result.ok and result.errors == ()
-    assert result.output.contract_version == DEFAULT_CONTRACT_VERSION == "v3"
+    assert result.output.contract_version == DEFAULT_CONTRACT_VERSION == "v4"
     assert result.derived_positions == (None,)  # no image_size provided
 
 

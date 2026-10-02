@@ -1,0 +1,29 @@
+{
+  "version": "v4",
+  "description": "Shared enum-to-phrase mapping consumed by BOTH the P1 GT rules (canonical enum values) and the P4 reasoning renderer (fixed phrases). Decision ledger P4.2: one table, two consumers, so risk_factors <-> reasoning wording stays bidirectionally exact. Phrases are lowercase and must appear verbatim (case-insensitive) in the risk segment of the rendered reasoning; no other risk phrase may appear. Motion phrases are used as premodifiers ('a {motion_phrase} {category}'). Traffic lights are intentionally absent (P4.4: zero mentions).",
+  "speed_action": {
+    "ACCELERATE": "accelerate",
+    "KEEP_SPEED": "maintain my current speed",
+    "DECELERATE": "decelerate",
+    "STOP": "stop"
+  },
+  "yield_required": {
+    "true": "yielding is required",
+    "false": "no yielding is required"
+  },
+  "risk_factors": {
+    "pedestrian_crossing": "pedestrian crossing",
+    "vehicle_merging": "vehicle merging",
+    "lead_vehicle_braking": "lead vehicle braking",
+    "corridor_conflict": "corridor conflict",
+    "stationary_obstacle": "stationary obstacle",
+    "congestion": "congestion",
+    "oncoming_traffic": "oncoming traffic"
+  },
+  "motion_state": {
+    "stationary": "stationary",
+    "same_direction": "same-direction",
+    "oncoming": "oncoming",
+    "crossing": "crossing"
+  }
+}

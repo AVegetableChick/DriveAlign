@@ -12,7 +12,11 @@ Purpose:
     - v1: brief format rules + free-text schema (first sanity round).
     - v2: strong envelope rules + free-text schema (recorded S03 round).
     - v3: v2 envelope rules + closed vocabularies and nine-grid derived
-      coarse_position (current default, shipped with the v2 parser work).
+      coarse_position.
+    - v4: v3 five model-face artifacts copied verbatim + three new GT-side
+      assets (gt_rule_config.json, reasoning_templates.json,
+      enum_phrase_map.json) carrying the S08 backfill rules. The model face
+      is unchanged, so v4 request hashes stay identical to v3 (S08 gate 1).
 """
 
 from functools import lru_cache
@@ -21,10 +25,10 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[3]
 CONTRACTS_DIR = REPO_ROOT / "configs" / "contracts"
 
-AVAILABLE_CONTRACT_VERSIONS = ("v1", "v2", "v3")
+AVAILABLE_CONTRACT_VERSIONS = ("v1", "v2", "v3", "v4")
 
-#: Current frozen pairing (prompt v3 + closed-vocabulary schema).
-DEFAULT_CONTRACT_VERSION = "v3"
+#: Current frozen pairing (v3 model face + S08 GT-side assets).
+DEFAULT_CONTRACT_VERSION = "v4"
 
 
 def contract_dir(version: str) -> Path:

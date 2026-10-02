@@ -1,0 +1,68 @@
+{
+  "version": "v4-rules-0.1.0",
+  "status": "frozen",
+  "contract_version": "v4",
+  "description": "S08 GT derivation rule thresholds (decision ledger S08_pre_implementation_decisions.md P1). Values frozen by the P1.2 train-only calibration (runs/S08_gt_backfill/calibration_report.md, 2026-10-02): pool cone/disc per user decision with class ranges scaled by 0.75 (45/30/15); corridor d_risk raised to 3.0/2.0 per user decision; motion and action kept at provisional defaults. small_following_gap is REMOVED from the taxonomy (calibration showed <=0.64% detection, starved) so the gap section is gone. Truncation exemption verified train-only (runs/S08_gt_backfill/truncation_risk_report.md, 2026-10-02): pool truncation share 11.33% (2,655/23,425 anchors, above the 5% target) carries a measured cost of 26 missed-evidence frames (0.111%), i.e. frames whose yield_required GT would flip to True if the top-8 cap were lifted — recorded as a known limitation under the visibility-first principle. Units: distances meters, angles degrees, times seconds. corridor.* implements the t0 bilateral constant-velocity (CV) counterfactual extrapolation that replaces 'future trajectory / occupancy' for the corridor family; braking./stationary_obstacle./congestion.* keep actual-trajectory evidence windows (direct observables, no self-defeating trap).",
+  "pool": {
+    "cone_half_angle_deg": 30.0,
+    "proximity_disc_radius_m": 15.0,
+    "cone_range_by_group_m": {
+      "vehicle": 45.0,
+      "pedestrian": 30.0,
+      "static": 15.0
+    },
+    "class_groups": {
+      "vehicle": ["car", "truck", "construction_vehicle", "bus", "trailer", "bicycle", "motorcycle"],
+      "pedestrian": ["pedestrian"],
+      "static": ["barrier", "traffic_cone"]
+    }
+  },
+  "observability": {
+    "min_depth_m": 0.1,
+    "min_visible_area_frac": 0.0
+  },
+  "motion": {
+    "stationary_speed_mps": 0.5,
+    "band_half_width_deg": 45.0
+  },
+  "corridor": {
+    "t_risk_s": 3.0,
+    "time_step_s": 0.25,
+    "ego_length_m": 4.1,
+    "ego_width_m": 1.87,
+    "width_margin_m": 0.5,
+    "d_risk_vehicle_m": 3.0,
+    "d_risk_pedestrian_m": 2.0
+  },
+  "braking": {
+    "evidence_window_s": 3.0,
+    "speed_drop_mps": 0.5
+  },
+  "stationary_obstacle": {
+    "evidence_window_s": 3.0,
+    "max_speed_mps": 0.5
+  },
+  "congestion": {
+    "lead_speed_mps": 2.0,
+    "min_queue_vehicles": 3
+  },
+  "oncoming": {
+    "range_m": 20.0
+  },
+  "action": {
+    "window_s": 3.0,
+    "delta": 0.15,
+    "stop_speed_mps": 0.5
+  },
+  "calibration_targets": [
+    "pool.cone_half_angle_deg",
+    "pool.proximity_disc_radius_m",
+    "pool.cone_range_by_group_m",
+    "corridor.t_risk_s",
+    "corridor.d_risk_vehicle_m",
+    "corridor.d_risk_pedestrian_m",
+    "motion.band_half_width_deg",
+    "motion.stationary_speed_mps",
+    "action.delta"
+  ]
+}
