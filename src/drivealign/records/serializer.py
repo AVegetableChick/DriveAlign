@@ -41,7 +41,10 @@ from dataclasses import dataclass
 from enum import Enum
 
 from drivealign.contracts.prompt import build_structured_prompt
-from drivealign.contracts.versions import DEFAULT_CONTRACT_VERSION
+from drivealign.contracts.versions import (
+    DEFAULT_CONTRACT_VERSION,
+    model_face_version,
+)
 from drivealign.records.record import DriveAlignRecord, ModelInputs
 
 #: Decimals used for the ego-speed line of the prompt (matches the record).
@@ -166,7 +169,11 @@ def serialize(model_inputs: ModelInputs, policy: InputPolicy) -> ModelRequest:
     )
     return ModelRequest(
         policy=policy,
-        contract_version=DEFAULT_CONTRACT_VERSION,
+        # Model-face stamp, NOT the record-side version: the request hash
+        # tracks what the model sees, and v4 inherits the v3 model face
+        # verbatim, so v4 request hashes stay identical to the frozen v3
+        # anchor manifest (S08 gate 1).
+        contract_version=model_face_version(DEFAULT_CONTRACT_VERSION),
         prompt=prompt,
         image_relpaths=relpaths,
         frame_tokens=tokens,

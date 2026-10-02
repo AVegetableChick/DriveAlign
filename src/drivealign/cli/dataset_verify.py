@@ -10,19 +10,25 @@ Purpose:
 
     - shards (all splits), quarantine.jsonl, dataset_manifest.json
     - anchor_policy_manifest.json
-    - build_report.json, record_distribution_report.{json,md}
+    - build_report.{json,md} plus whichever distribution reports the frozen
+      build produced (v1: record_distribution_report; v4: gt_distribution_report)
 
     The builder commit is pinned to the one recorded inside the frozen
     ``dataset_manifest.json`` so a moved git HEAD cannot masquerade as a
     determinism failure; a genuine code/config drift shows up as a byte
-    difference. Exit code 0 iff every compared file is identical.
+    difference. The scene manifests are read from the frozen config's
+    ``scene_manifests_dir`` (falling back to the asset dir for v1, which
+    stored them inline). Exit code 0 iff every compared file is identical.
 
-Startup command (loads ~10-15 GB RAM, run inside tmux):
-    ``tmux new-session -d -s s07_verify \
+Usage (v4 assets; loads ~10-15 GB RAM, run inside tmux):
+    ``tmux new-session -d -s s08_verify \
     'source /root/miniconda3/etc/profile.d/conda.sh && conda activate autovla_codeclean && \
     cd /root/autodl-tmp/drivealign_workspace && \
     PYTHONPATH=DriveAlign/src python -m drivealign.cli.dataset_verify \
-    2>&1 | tee runs/S07_dataset/verify.log'``
+    --assets data/dataset_v4 --reports runs/S08_gt_backfill/reports \
+    --scratch runs/S08_gt_backfill/verify_scratch \
+    --scratch-reports runs/S08_gt_backfill/verify_scratch_reports \
+    2>&1 | tee runs/S08_gt_backfill/verify.log'``
 """
 
 from __future__ import annotations
@@ -90,6 +96,9 @@ def main(argv=None) -> int:
     frozen_commit = frozen["config"]["builder_commit"]
     dataroot = frozen["config"]["dataroot"]
     version = frozen["config"]["nuscenes_version"]
+    # The frozen manifests live inside the v1 asset dir; later builds record
+    # their (external) scene-manifest dir in the frozen config instead.
+    scene_manifests_dir = Path(frozen["config"].get("scene_manifests_dir", str(assets)))
 
     for path in (scratch, scratch_reports):
         if path.exists():
@@ -101,7 +110,7 @@ def main(argv=None) -> int:
         [
             "--dataroot", dataroot,
             "--version", version,
-            "--scene-manifests", str(assets),
+            "--scene-manifests", str(scene_manifests_dir),
             "--out", str(scratch),
             "--reports", str(scratch_reports),
             "--builder-commit", frozen_commit,
@@ -109,7 +118,10 @@ def main(argv=None) -> int:
     )
     # 2) Re-derive the 1F/4F anchor policy manifest (Step 3).
     for split in ("train", "val", "test"):
-        shutil.copy2(assets / f"{split}_scene_manifest.json", scratch / f"{split}_scene_manifest.json")
+        shutil.copy2(
+            scene_manifests_dir / f"{split}_scene_manifest.json",
+            scratch / f"{split}_scene_manifest.json",
+        )
     rc_manifest = manifest.main(
         [
             "--dataroot", dataroot,
@@ -121,13 +133,24 @@ def main(argv=None) -> int:
     )
 
     # 3) Byte-compare every produced file against the frozen copy.
+    #    Report files are compared only when the frozen build produced them
+    #    (v1 also wrote record_distribution_report; v4 writes gt_distribution_report).
     pairs = [
         (assets / "dataset_manifest.json", scratch / "dataset_manifest.json"),
         (assets / "quarantine.jsonl", scratch / "quarantine.jsonl"),
         (assets / "anchor_policy_manifest.json", scratch / "anchor_policy_manifest.json"),
-        (frozen_reports / "build_report.json", scratch_reports / "build_report.json"),
-        (frozen_reports / "record_distribution_report.json", scratch_reports / "record_distribution_report.json"),
-        (frozen_reports / "record_distribution_report.md", scratch_reports / "record_distribution_report.md"),
+    ]
+    pairs += [
+        (frozen_reports / name, scratch_reports / name)
+        for name in (
+            "build_report.json",
+            "build_report.md",
+            "record_distribution_report.json",
+            "record_distribution_report.md",
+            "gt_distribution_report.json",
+            "gt_distribution_report.md",
+        )
+        if (frozen_reports / name).is_file()
     ]
     for split in ("train", "val", "test"):
         for shard in frozen["splits"][split]["shards"]:

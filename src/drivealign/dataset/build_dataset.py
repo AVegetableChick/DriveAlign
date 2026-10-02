@@ -1,7 +1,7 @@
-"""Stage 07 dataset build: frozen scene manifests -> sharded records.
+"""Stage 07/08 dataset build: frozen scene manifests -> sharded records.
 
 Purpose:
-    Build the v1 dataset from the three frozen scene manifests produced by
+    Build the v4 dataset from the three frozen scene manifests produced by
     :mod:`drivealign.dataset.split` (decisions D3/D4). For every scene, in
     manifest token order, walk its keyframes oldest -> newest and take every
     sample whose walk index is >= 3 (exactly ``sample.prev`` depth >= 3 in
@@ -10,6 +10,20 @@ Purpose:
     only construction path): it either yields a valid record or a stable
     quarantine reason code. Scene end truncates future poses naturally and
     is NOT a quarantine condition (Stage 06 behavior, unchanged).
+
+    S08 v4 backfill (this stage's addition): every VALID record gets
+    ``training_targets.expected_output`` filled through the pure S08 GT
+    pipeline (:mod:`drivealign.gt.backfill` — observability gating, pool
+    top-8, motion_state, risk_factors, speed_action, yield_required,
+    deterministic reasoning render, v4 output-schema + zero-contradiction
+    gates, fail-fast). The GT inputs come from the SAME record's frozen
+    derivations (``model_inputs.ego_speed_mps`` and
+    ``oracle_only.future_ego_poses``) plus the anchor-frame evidence the gt
+    package reads from nuScenes. Quarantined records keep ``None`` (no GT
+    for quarantined anchors). ``adapter.py`` and the request-hash path are
+    untouched: model_inputs are byte-identical to v3 (S08 gate 1); the
+    record hash moves to a new generation exactly because the GT fields are
+    added (why contract v4 exists).
 
     Outputs (data assets under ``--out``, decision D3):
     - ``<split>/shard-NNNN.jsonl``: one canonical record JSON per line
@@ -27,26 +41,35 @@ Purpose:
       the payload without the hash field).
 
     Run artifacts (``--reports``): ``build_report.{json,md}`` with per-split
-    counts, the quarantine reason distribution and the Step 2 gates.
+    counts, the quarantine reason distribution and the Step 2 gates; plus
+    ``gt_distribution_report.{json,md}`` with the S08 GT label distributions
+    (speed_action / yield_required / risk_factors / critical_objects /
+    reasoning length, per split + total), counted inline while shards are
+    written (:mod:`drivealign.dataset.gt_distribution`).
 
     Gates enforced here:
     - scene manifests intact (embedded sha256 recomputed) and pairwise disjoint
     - full coverage: valid + quarantine == candidates for every split
     - quarantine reason codes drawn from the frozen 8-code taxonomy, and no
       quarantined token leaking into the record index
+    - GT backfill: 100% of valid records written with a non-empty
+      ``expected_output`` (fail-fast: any rule/gate failure aborts the build
+      naming the anchor)
     - shard roundtrip: re-reading every shard line reproduces the manifest
       index exactly (token, line, record hash, roundtripped canonical hash)
 
 Example launch command (full build; loads ~10-15 GB RAM, run inside tmux):
-    ``tmux new-session -d -s s07_build \
+    ``tmux new-session -d -s s08_build \
     'source /root/miniconda3/etc/profile.d/conda.sh && conda activate autovla_codeclean && \
     cd /root/autodl-tmp/drivealign_workspace && \
-    PYTHONPATH=DriveAlign/src python -m drivealign.dataset.build_dataset \
-    2>&1 | tee runs/S07_dataset/build_dataset.log'``
+    set -o pipefail && PYTHONPATH=DriveAlign/src python -m drivealign.dataset.build_dataset \
+    --out /root/autodl-tmp/datasets/drivealign_dataset/v4 \
+    2>&1 | tee runs/S08_gt_backfill/build_dataset.log'``
 
 Smoke (2 scenes per split into a scratch directory, never the real assets):
     ``PYTHONPATH=DriveAlign/src python -m drivealign.dataset.build_dataset \
-    --max-scenes 2 --out runs/S07_dataset/smoke_out --reports runs/S07_dataset/reports``
+    --max-scenes 2 --out runs/S08_gt_backfill/smoke_out \
+    --reports runs/S08_gt_backfill/smoke_reports``
 """
 
 from __future__ import annotations
@@ -57,12 +80,13 @@ import json
 import subprocess
 import sys
 from collections import Counter
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Dict, IO, List, Optional, Tuple
 
 from nuscenes.nuscenes import NuScenes
 
-from drivealign.contracts.versions import DEFAULT_CONTRACT_VERSION
+from drivealign.contracts.versions import DEFAULT_CONTRACT_VERSION, contract_file
 from drivealign.data.nuscenes_io import (
     BAD_GAP,
     CROSS_SCENE,
@@ -72,17 +96,27 @@ from drivealign.data.nuscenes_io import (
     NON_INCREASING_TIME,
     load_nuscenes,
 )
+from drivealign.dataset.gt_distribution import GtDistribution, render_gt_distribution_markdown
+from drivealign.gt.backfill import (
+    build_expected_output,
+    collect_anchor_evidence,
+)
+from drivealign.gt.config import RuleConfig, load_phrase_map, load_rule_config, load_templates
 from drivealign.records.adapter import (
     MISSING_CALIBRATION,
     NUMERIC_ANOMALY,
     build_record,
 )
-from drivealign.records.record import DriveAlignRecord
+from drivealign.records.record import (
+    DriveAlignRecord,
+    TrainingTargets,
+    validate_record,
+)
 
 DEFAULT_DATAROOT = "data/nuscenes/trainval"
 DEFAULT_VERSION = "v1.0-trainval"
 DEFAULT_ASSETS = "data/dataset_v1"
-DEFAULT_REPORTS = "runs/S07_dataset/reports"
+DEFAULT_REPORTS = "runs/S08_gt_backfill/reports"
 
 SHARD_SIZE = 1000  # records per shard file (decision D3)
 MIN_PREVS = 3  # 4F window: anchor + 3 keyframe prevs
@@ -101,6 +135,70 @@ QUARANTINE_CODES = frozenset(
         NUMERIC_ANOMALY,
     }
 )
+
+#: The frozen GT-side contract asset carrying every S08 threshold.
+GT_RULE_CONFIG_FILE = "gt_rule_config.json"
+
+
+@dataclass(frozen=True)
+class GtAssets:
+    """Frozen S08 rule assets, loaded once per build (deterministic inputs)."""
+
+    rule_config: RuleConfig
+    templates: Dict
+    phrase_map: Dict
+
+    @classmethod
+    def load(cls) -> "GtAssets":
+        return cls(
+            rule_config=load_rule_config(),
+            templates=load_templates(),
+            phrase_map=load_phrase_map(),
+        )
+
+    @property
+    def rule_config_sha256(self) -> str:
+        return hashlib.sha256(
+            contract_file("v4", GT_RULE_CONFIG_FILE).read_bytes()
+        ).hexdigest()
+
+
+def _backfill_record(
+    nusc: NuScenes, record: DriveAlignRecord, gt: GtAssets
+) -> DriveAlignRecord:
+    """Fill ``training_targets.expected_output`` for one valid record (fail-fast).
+
+    The GT derivation consumes the record's OWN frozen values
+    (``model_inputs.ego_speed_mps``, ``oracle_only.future_ego_poses``) so the
+    labels always match what evaluation will replay; anchor-frame evidence
+    comes from the gt package's nuScenes reader. Any rule or gate failure
+    raises ValueError naming the anchor (S08 fail-fast gate plan) — the
+    build aborts instead of writing a half-filled dataset.
+    """
+    evidence = collect_anchor_evidence(nusc, record.sample_token)
+    expected_output = build_expected_output(
+        evidence,
+        ego_speed_mps=record.model_inputs.ego_speed_mps,
+        future_ego_poses=[
+            (p.x, p.y, p.timestamp_us) for p in record.oracle_only.future_ego_poses
+        ],
+        config=gt.rule_config,
+        templates=gt.templates,
+        phrase_map=gt.phrase_map,
+    )
+    filled = replace(
+        record,
+        training_targets=TrainingTargets(
+            expected_output=expected_output, language_reference=None
+        ),
+    )
+    problems = validate_record(filled)
+    if problems:
+        raise ValueError(
+            f"backfilled record for {record.sample_token} fails validation "
+            f"(derivation bug): {'; '.join(problems)}"
+        )
+    return filled
 
 
 def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
@@ -216,10 +314,16 @@ def build_split(
     scene_tokens: List[str],
     out_root: Path,
     builder_commit: str,
+    gt: Optional[GtAssets] = None,
+    gt_stats: Optional[GtDistribution] = None,
 ) -> Tuple[dict, List[dict], Dict[str, dict]]:
     """Build every 4F candidate of one split.
 
-    Returns (stats, quarantine_entries, record_index) where record_index maps
+    ``gt`` carries the frozen S08 rule assets; when given, every valid
+    record is GT-backfilled (v4 semantics; quarantined records keep None).
+    ``gt_stats`` (optional) accumulates the GT label distributions of the
+    backfilled records inline — no extra pass over the shards. Returns
+    (stats, quarantine_entries, record_index) where record_index maps
     sample_token -> {split, shard, line, record_hash} for the valid records.
     """
     writer = _ShardWriter(out_root, split, SHARD_SIZE)
@@ -228,6 +332,7 @@ def build_split(
     reasons: Counter = Counter()
     n_keyframes = 0
     n_valid = 0
+    n_backfilled = 0
     n_candidates = 0
 
     for s_pos, scene_token in enumerate(scene_tokens, start=1):
@@ -254,6 +359,12 @@ def build_split(
                 )
             else:
                 record = result.record
+                if gt is not None:
+                    record = _backfill_record(nusc, record, gt)
+                    if record.training_targets.expected_output is not None:
+                        n_backfilled += 1
+                        if gt_stats is not None:
+                            gt_stats.update(record.training_targets.expected_output)
                 shard, line_no = writer.write(record.to_dict())
                 index[token] = {
                     "line": line_no,
@@ -266,7 +377,7 @@ def build_split(
             print(
                 f"[{split}] scene {s_pos}/{len(scene_tokens)} "
                 f"candidates={n_candidates} valid={n_valid} "
-                f"quarantine={len(quarantine)}",
+                f"backfilled={n_backfilled} quarantine={len(quarantine)}",
                 flush=True,
             )
     writer.close()
@@ -276,6 +387,7 @@ def build_split(
         "keyframe_count": n_keyframes,
         "candidate_count": n_candidates,
         "valid_count": n_valid,
+        "backfilled_count": n_backfilled,
         "quarantine_count": len(quarantine),
         "shard_count": len(writer.shards),
         "shards": list(writer.shards),
@@ -383,21 +495,22 @@ def build_dataset_manifest(
 def _markdown_report(
     config: dict, stats: Dict[str, dict], gates: Dict[str, bool]
 ) -> str:
-    lines = ["# Stage 07 Step 2: dataset build report", "", "## Config", ""]
+    lines = ["# Stage 07/08 dataset build report (contract v4 + GT backfill)", "", "## Config", ""]
     for key in sorted(config):
         lines.append(f"- {key}: `{config[key]}`")
     lines += [
         "",
         "## Per-split build",
         "",
-        "| split | scenes | keyframes | candidates | valid | quarantine | shards |",
-        "|---|---|---|---|---|---|---|",
+        "| split | scenes | keyframes | candidates | valid | backfilled | quarantine | shards |",
+        "|---|---|---|---|---|---|---|---|",
     ]
     for split in SPLITS:
         s = stats[split]
         lines.append(
             f"| {split} | {s['scene_count']} | {s['keyframe_count']} | "
             f"{s['candidate_count']} | {s['valid_count']} | "
+            f"{s['backfilled_count']} | "
             f"{s['quarantine_count']} | {s['shard_count']} |"
         )
     reasons_total: Counter = Counter()
@@ -441,10 +554,27 @@ def main(argv: Optional[List[str]] = None) -> int:
         or (sets["val"] & sets["test"])
     )
 
+    gt = GtAssets.load()
+    if gt.rule_config.status != "frozen":
+        raise ValueError(
+            f"gt_rule_config.json status is {gt.rule_config.status!r}; "
+            "the v4 build requires the frozen S08 rules"
+        )
+    print(
+        f"gt rules: version={gt.rule_config.rule_version} "
+        f"status={gt.rule_config.status} "
+        f"sha256={gt.rule_config_sha256[:12]}...",
+        flush=True,
+    )
+
     config = {
         "builder_commit": builder_commit,
         "contract_version": DEFAULT_CONTRACT_VERSION,
         "dataroot": str(args.dataroot.expanduser().resolve()),
+        "gt_backfill": True,
+        "gt_rule_config_sha256": gt.rule_config_sha256,
+        "gt_rule_status": gt.rule_config.status,
+        "gt_rule_version": gt.rule_config.rule_version,
         "max_scenes": args.max_scenes,
         "min_prevs": MIN_PREVS,
         "mode": "smoke" if args.max_scenes is not None else "full",
@@ -463,12 +593,16 @@ def main(argv: Optional[List[str]] = None) -> int:
     quarantine: List[dict] = []
     stats: Dict[str, dict] = {}
     per_split: Dict[str, dict] = {}
+    distributions: Dict[str, GtDistribution] = {
+        split: GtDistribution() for split in SPLITS
+    }
     for split in SPLITS:
         tokens = scene_tokens_by_split[split]
         if args.max_scenes is not None:
             tokens = tokens[: args.max_scenes]
         stats[split], q, idx = build_split(
-            nusc, split, tokens, out_root, builder_commit
+            nusc, split, tokens, out_root, builder_commit, gt,
+            gt_stats=distributions[split],
         )
         index.update(idx)
         quarantine.extend(q)
@@ -506,11 +640,15 @@ def main(argv: Optional[List[str]] = None) -> int:
         for entry in quarantine
     )
     roundtrip_problems = verify_shard_roundtrip(out_root, per_split, index)
+    gt_backfill_full = all(
+        s["backfilled_count"] == s["valid_count"] for s in stats.values()
+    )
     gates = {
         "scene_manifests_intact": True,  # load_scene_manifest raised otherwise
         "scene_sets_disjoint": scene_sets_disjoint,
         "full_coverage": full_coverage,
         "quarantine_codes_valid": quarantine_ok,
+        "gt_backfill_full": gt_backfill_full,
         "shard_roundtrip": not roundtrip_problems,
     }
     gates["all_pass"] = all(gates.values())
@@ -540,15 +678,41 @@ def main(argv: Optional[List[str]] = None) -> int:
         _markdown_report(config, stats, gates), encoding="utf-8"
     )
 
+    # 5) GT label distribution report (S08): inline-counted during build.
+    total = GtDistribution()
+    for distribution in distributions.values():
+        total.merge(distribution)
+    per_split_gt = {split: d.to_payload() for split, d in distributions.items()}
+    per_split_gt["all"] = total.to_payload()
+    gt_meta = {
+        key: config[key]
+        for key in (
+            "builder_commit",
+            "contract_version",
+            "gt_rule_config_sha256",
+            "gt_rule_status",
+            "gt_rule_version",
+            "mode",
+        )
+    }
+    (reports_dir / "gt_distribution_report.json").write_text(
+        _canonical_json(per_split_gt) + "\n", encoding="utf-8"
+    )
+    (reports_dir / "gt_distribution_report.md").write_text(
+        render_gt_distribution_markdown(per_split_gt, gt_meta), encoding="utf-8"
+    )
+
     for split in SPLITS:
         s = stats[split]
         print(
             f"{split}: scenes={s['scene_count']} keyframes={s['keyframe_count']} "
             f"candidates={s['candidate_count']} valid={s['valid_count']} "
+            f"backfilled={s['backfilled_count']} "
             f"quarantine={s['quarantine_count']} shards={s['shard_count']}"
         )
     print(f"quarantine reasons: {report['quarantine_reasons_total'] or '{}'}")
     print(f"manifest: {out_root / 'dataset_manifest.json'}")
+    print(f"gt distribution: {reports_dir / 'gt_distribution_report.md'}")
     if gates["all_pass"]:
         print(f"PASS: all Step 2 gates ok -> {reports_dir / 'build_report.json'}")
     else:

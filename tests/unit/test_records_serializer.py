@@ -109,6 +109,51 @@ def test_1f_and_4f_prompts_identical():
     ).prompt
 
 
+def test_request_stamps_model_face_version():
+    """S08 gate 1: v4 requests keep the v3 stamp (model face inherited verbatim)."""
+    from drivealign.contracts.versions import (
+        DEFAULT_CONTRACT_VERSION,
+        model_face_version,
+    )
+
+    assert DEFAULT_CONTRACT_VERSION == "v4"  # record side moved to v4 (S08)
+    req = serialize(_model_inputs(), InputPolicy.ONE_FRAME)
+    assert req.contract_version == model_face_version("v4") == "v3"
+
+
+def test_v4_hash_face_files_are_verbatim_v3():
+    """The v4 -> v3 lineage claim is pinned byte-for-byte on the hash face.
+
+    Only ``prompt.txt`` + the two vocab tables must be verbatim: the request
+    hash sees the prompt text and the causal inputs. ``output_schema.json``
+    and ``risk_taxonomy.json`` legitimately differ by the frozen gap removal
+    (risk enum 8 -> 7, S08_parameter_freeze 9.1) and never enter the hash.
+    """
+    from drivealign.contracts.versions import HASH_FACE_FILES, contract_file
+
+    for name in HASH_FACE_FILES:
+        assert contract_file("v4", name).read_bytes() == contract_file(
+            "v3", name
+        ).read_bytes(), f"v4 {name} drifted from the v3 hash face"
+    # The remaining model-face delta is exactly the gap removal (8 -> 7).
+    import json as _json
+
+    v3_terms = {
+        t["canonical"]
+        for t in _json.loads(contract_file("v3", "risk_taxonomy.json").read_text())[
+            "terms"
+        ]
+    }
+    v4_terms = {
+        t["canonical"]
+        for t in _json.loads(contract_file("v4", "risk_taxonomy.json").read_text())[
+            "terms"
+        ]
+    }
+    assert v3_terms - v4_terms == {"small_following_gap"}
+    assert v4_terms - v3_terms == set()
+
+
 def test_frame_selection():
     mi = _model_inputs()
     req1 = serialize(mi, InputPolicy.ONE_FRAME)

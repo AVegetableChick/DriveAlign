@@ -86,7 +86,7 @@ git commit -m "[Docs] S08 pre-implementation decisions and implementation plan"
 | 1 | v4 三件资产骨架（数值标 provisional）+ gt 包 + 单测 + 标定 CLI | agent，sandbox |
 | 2 | train-only 标定跑 → 报告 → **用户拍板数值** → 冻结 gt_rule_config（provisional → frozen） | 用户 tmux 执行命令（10–15GB RAM）；agent 分析报告 |
 | 3 | build_dataset v4 回填改造 + 冒烟（`--max-scenes 2 --out runs/S08_gt_backfill/smoke_out`）+ 冒烟级 parity 预验（冒烟 anchor token 与 v3 manifest 对比） | agent，sandbox |
-| 4 | 全量 v4 重建：新物理目录 `/root/autodl-tmp/datasets/drivealign_dataset/v4` + 新 symlink `data/dataset_v4`（v1 只读保留，parity diff 与回滚依赖） | **用户，tmux** |
+| 4 | 全量 v4 重建：新物理目录 `/root/autodl-tmp/datasets/drivealign_dataset/v4` + 新 symlink `data/dataset_v4`（**命名裁定**：dataset 目录跟 contract 代际走，v4=contract v4 产物；`dataset_v1` 为历史错位——实为 contract v3 产物，本轮不改名，作为已知命名错位记录。v1 只读保留，parity diff 与回滚依赖） | **用户，tmux** |
 | 5 | Gates 全套（§6）+ observability/coverage 按 split 报告 → `runs/S08_gt_backfill/` | agent，sandbox |
 | 6 | 实验记录落 `docs/experiment_record/S08/` + git commit | agent |
 
@@ -123,6 +123,8 @@ tmux new-session -d -s s08_calib \
 
 ## 9. Step 2 冻结记录（2026-10-02）
 
+> 本节为摘要；完整的选择过程、备选方案否决理由与实测数据见 [S08_parameter_freeze.md](./S08_parameter_freeze.md)。
+
 ### 9.1 五族定值（用户拍板 + 标定证据）
 
 | 参数族 | 冻结值 | 依据 |
@@ -149,4 +151,47 @@ tmux new-session -d -s s08_calib \
 - `gt_rule_config.json`：`status` **provisional → frozen**，description 记录标定与验证来源；
 - 单测 179 passed（含 gap 移除、v4 升级、池几何定值后的回归修正）；
 - 标定/验证冒烟均在真实 trainval 2 场景跑通（`runs/S08_gt_backfill/*smoke*`）。
-- 下一步：Step 3 build_dataset v4 回填改造（sandbox）→ Step 4 全量重建（用户 tmux，`/root/autodl-tmp/datasets/drivealign_dataset/v4` + symlink `data/dataset_v4`）。
+- 下一步：Step 3 build_dataset v4 回填改造（sandbox）→ Step 4 全量重建（用户 tmux，`/root/autodl-tmp/datasets/drivealign_dataset/v4` + symlink `data/dataset_v4`；命名裁定见 §5 Step 4 行）。
+
+## 10. Step 3 执行记录（2026-10-02，agent sandbox）
+
+### 10.1 改动清单
+
+| 文件 | 改动 |
+|---|---|
+| `contracts/versions.py` | 新增 `MODEL_FACE_LINEAGE`（v4→v3）、`MODEL_FACE_FILES`、`HASH_FACE_FILES`、`model_face_version()`；docstring 记录 v4 模型面唯一 delta = gap 移除（output_schema/risk_taxonomy 8→7，不进 request hash） |
+| `records/serializer.py` | `serialize()` 打戳改为 `contract_version=model_face_version(DEFAULT_CONTRACT_VERSION)`——**S08 gate 1 关键设计**：request hash 内嵌版本戳，v4 继承 v3 模型面（逐字节），故 v4 request hash 与 v3 manifest 存储值逐值相同；record 侧 provenance 仍为 v4 |
+| `dataset/build_dataset.py` | 接入 GT 回填：`GtAssets`（rule_config/templates/phrase_map + sha256 溯源）、`_backfill_record`（消费 record 自身 `ego_speed_mps`/`future_ego_poses` + anchor 证据，`validate_record` fail-fast）、quarantine 恒 None、gate `gt_backfill_full`、config 记录 `gt_rule_config_sha256/status/version` |
+| `cli/dataset_parity_check.py` | **新增**：v3↔v4 parity CLI（smoke/full 两模式），8 项 gates：anchor_subset / split_assignment_match / request_hash_parity（硬）/ gt_backfill_present（硬）/ record_hash_new_generation（硬）/ placement_integrity / anchor_set_equality（full 要求集合相等）/ all_pass；v3 侧 manifest sha256 校验后读取 |
+| `dataset/gt_distribution.py` | **新增**：GT 分布累计器 + markdown 渲染——构建时 inline 计数（零额外 I/O pass），枚举词表全部读自冻结 v4 契约资产（零计数行显式保留）；9 张表：speed_action / yield_required / risk_factors（unique 语义）/ category / motion_state / category×motion / objects-per-frame 直方图 / speed_action×yield 交叉表 / reasoning 长度，per split + TOTAL |
+| 单测 | 新增 `test_dataset_build_v4.py`（mini 集成 + GT 分布 4 例 + parity 纯函数 2 例 + CLI 合成资产对 3 例）、`test_records_serializer.py` 增模型面戳与 hash-face 逐字节断言；**全量 193 passed** |
+
+### 10.2 关键设计决策：model-face 版本戳
+
+request hash payload 含 `contract_version` 字段。DEFAULT 已切 v4 后 serialize 重算值与 v3 manifest 存储值字面不等——探针实证：钉回 v3 戳后逐字节复现。为满足用户硬 gate（"request_hash_1f/4f 逐值相同"）且不动 prompt/因果字段，引入 model-face lineage：**序列化请求打模型面版本（v4 继承 v3），记录打 record 侧版本（v4）**。v3→v4 资产差异精确刻画：prompt.txt / category_vocab.json / motion_vocab.json 逐字节 IDENTICAL；output_schema/risk_taxonomy 仅差 small_following_gap 移除且不进 hash face。runner（structured_runner）走独立 SampleRequest 不消费此戳，改动局部安全。
+
+### 10.3 冒烟结果（2 场景 × 3 split，真实 trainval）
+
+- 构建：train 74 候选 → 68 valid 全回填 + 6 quarantine（全 BAD_GAP）；val 75/75；test 74/74；gates 全 PASS（含 `gt_backfill_full`）。
+- Parity 预验：**217 anchors 全 PASS**——request_hash_1f/4f 与冻结 v3 manifest 逐值相同（硬 gate 达成）、GT 5 字段全填、record hash 全部新代际（回填生效证据）、placement 完好。
+- 抽查样例：5 字段齐全；reasoning 仅提及池内对象，叙事顺序 perception→risk→decision；risk_factors 空帧与 reasoning 零风险句一致。
+- 产物：`runs/S08_gt_backfill/smoke_out/`、`smoke_reports/build_report.{json,md}`、`parity_report.{json,md}`。
+
+### 10.4 Step 4 命令（用户 tmux 执行）
+
+```bash
+tmux new-session -d -s s08_build \
+  'source /root/miniconda3/etc/profile.d/conda.sh && conda activate autovla_codeclean && \
+   cd /root/autodl-tmp/drivealign_workspace && \
+   set -o pipefail && PYTHONPATH=DriveAlign/src python -m drivealign.dataset.build_dataset \
+   --out /root/autodl-tmp/datasets/drivealign_dataset/v4 \
+   2>&1 | tee runs/S08_gt_backfill/build_dataset.log'
+```
+
+构建完成后建 symlink（同物理盘模式）：
+
+```bash
+ln -s /root/autodl-tmp/datasets/drivealign_dataset/v4 /root/autodl-tmp/drivealign_workspace/data/dataset_v4
+```
+
+> 内存 10–15GB、预计 30–60 分钟（30,940 valid + 659 quarantine 全量回填）。构建结束自动产出 **GT 分布表**：`runs/S08_gt_backfill/reports/gt_distribution_report.{md,json}`（5 域 9 表，per split + TOTAL；冒烟预览见 `smoke_reports/` 同名文件）。v1 目录只读保留（parity diff 与回滚依赖）。agent 侧随后接 Step 5 gates：`dataset_parity_check --mode full`（30,940 anchors 集合相等 + 逐值 parity）+ `dataset_verify` 确定性重跑。
