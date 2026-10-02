@@ -195,3 +195,19 @@ ln -s /root/autodl-tmp/datasets/drivealign_dataset/v4 /root/autodl-tmp/drivealig
 ```
 
 > 内存 10–15GB、预计 30–60 分钟（30,940 valid + 659 quarantine 全量回填）。构建结束自动产出 **GT 分布表**：`runs/S08_gt_backfill/reports/gt_distribution_report.{md,json}`（5 域 9 表，per split + TOTAL；冒烟预览见 `smoke_reports/` 同名文件）。v1 目录只读保留（parity diff 与回滚依赖）。agent 侧随后接 Step 5 gates：`dataset_parity_check --mode full`（30,940 anchors 集合相等 + 逐值 parity）+ `dataset_verify` 确定性重跑。
+
+### 10.5 Step 4 全量构建结果（2026-10-03，用户 tmux 执行）
+
+- 产物落盘：物理盘 `/root/autodl-tmp/datasets/drivealign_dataset/v4/`（32 shards + quarantine.jsonl + dataset_manifest.json），symlink `data/dataset_v4`（agent 建立并验证）。
+- Manifest 抽验：contract v4 / gt_rule v4-rules-0.1.0 (frozen)；records 30,940 = train 22,941 / val 2,531 / test 5,468（与 v3 逐 split 一致）；quarantine 659（全 BAD_GAP）。
+- **命名裁定**：dataset 目录跟 contract 代际走（`dataset_v4` = contract v4 产物）；`dataset_v1` 为已知历史命名错位（实为 contract v3 产物），永久保留不改名；未来 contract vN 重建 → `dataset_vN`。
+
+### 10.6 Step 5 gates 结果（全 PASS）
+
+| Gate | 结果 |
+|---|---|
+| Full parity（`dataset_parity_check --mode full`） | **PASS**：30,940/30,940 anchors 集合相等；request_hash_1f/4f 零 mismatch（硬 gate）；GT 5 字段零缺失；record hash 零未换代；placement 零问题。报告 `runs/S08_gt_backfill/parity_report.{json,md}` |
+| Determinism（`dataset_verify`：pinned 47b5e0a 重建 + 逐字节比对） | **PASS**：39 文件全同（32 shards + dataset_manifest + quarantine.jsonl + anchor_policy_manifest + 4 份 report）。报告 `runs/S08_gt_backfill/reports/determinism_report.json` |
+| GT 分布表 | 已产出（全量数字：KEEP_SPEED 40.8% / STOP 21.7% / ACCELERATE 18.8% / DECELERATE 18.7%；yield_required true 22.6%） |
+
+**插曲与教训**：首跑 verify 失败暴露两个问题。(1) v4 资产缺 `anchor_policy_manifest.json`——S07 完整流程是 build 主 CLI + anchor manifest 派生 CLI 两条命令，Step 4 命令只含前者；修复：verify 重建时 scratch 内派生出 pinned-commit 同产物，用户拷入 v4 资产作为初始冻结版（等价于跑完整两步）。(2) verify 假设 scene manifests 在资产目录内（v1 布局）；修复：从冻结 manifest config 的 `scene_manifests_dir` 读取，`_diff_files` 对 frozen 侧缺失文件优雅报错（原先裸 traceback + conda run 缓冲吞输出造成 exit 0 假象；sandbox 内跑 verify 须用 `conda run --no-capture-output`）。S08 结论：**contract v4 数据集资产冻结，S08 主线关闭**。

@@ -76,6 +76,9 @@ def _diff_files(pairs: List[Tuple[Path, Path]]) -> List[str]:
         if not candidate.is_file():
             differing.append(f"{reference.name}: MISSING in rebuild")
             continue
+        if not reference.is_file():
+            differing.append(f"{reference.name}: MISSING in frozen assets")
+            continue
         if reference.read_bytes() != candidate.read_bytes():
             differing.append(reference.name)
     return differing
