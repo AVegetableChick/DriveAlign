@@ -180,9 +180,9 @@ def test_fenced_output_is_extracted_with_flag():
 
 
 @pytest.mark.usefixtures("stub_generate")
-def test_default_record_carries_contract_v4():
+def test_default_record_carries_contract_v5():
     record = run_structured_inference(None, SampleRequest("ok-1", "img_ok.jpg"))
-    assert record.contract_version == "v4"
+    assert record.contract_version == "v5"  # S09: prompt aligned to 7-item schema
 
 
 @pytest.mark.usefixtures("stub_generate")

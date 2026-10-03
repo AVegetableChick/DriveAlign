@@ -197,7 +197,7 @@ def test_prompt_with_speed_only_prepends_one_line():
 
 
 def test_default_contract_version_is_frozen():
-    assert DEFAULT_CONTRACT_VERSION == "v4"
+    assert DEFAULT_CONTRACT_VERSION == "v5"
 
 
 def test_prompt_v2_states_envelope_rules_explicitly():
@@ -277,10 +277,10 @@ V2_VALID_SAMPLE = {
 }
 
 
-def test_default_contract_is_v4_and_parses_ok():
+def test_default_contract_is_v5_and_parses_ok():
     result = parse_structured_output(json.dumps(V2_VALID_SAMPLE))
     assert result.ok and result.errors == ()
-    assert result.output.contract_version == DEFAULT_CONTRACT_VERSION == "v4"
+    assert result.output.contract_version == DEFAULT_CONTRACT_VERSION == "v5"
     assert result.derived_positions == (None,)  # no image_size provided
 
 
