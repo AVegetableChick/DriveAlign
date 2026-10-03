@@ -45,18 +45,3 @@ PYTHONPATH=DriveAlign/src python -m drivealign.cli.base_benchmark \
 2. 单样本失败未中止批处理（generation_failure 降级行存在则记录其数量）；
 3. `--resume` 重跑一遍末尾 10 token 无新增行（幂等性抽查）。
 
-## 性能观察与未来推理加速手段（2026-10-03 备案，不影响本轮冻结配置）
-
-**pilot 实测**（32 anchors）：latency p50 5.13s / p90 7.37s / 均值 5.59s；显存峰值 7.94 GB；input_tokens p50 2,335，output_tokens p50 ~174。瓶颈在 **decode**（输出 ~174 token 的逐 token 解码，显存带宽受限），prefill 占比小；flash_attention_2 与 bfloat16 已在 base_1f.yaml 启用（低垂果实已摘）。按 5.6s/anchor 估算：全量 ≈ 8.5h，反事实 2×200 ≈ 37min。
-
-**纪律约束**：base_1f.yaml 为预注册冻结配置（greedy/dtype/分辨率钉死），**本轮 benchmark 不得中途更换推理路径**，否则毁掉预注册与 S09↔S12 可比性。加速属"推理基建 v2"，立项前提是 parity gate（抽 N anchor 验证新旧路径输出逐值一致）+ 预注册。
-
-**候选路线**（按收益/侵入性排序）：
-
-| 路线 | 预期收益 | 侵入性 | 备注 |
-|---|---|---|---|
-| batch 推理（4–8 帧/批） | 2–4× | 中 | HF left-padding + 变长图像；显存余量充足（现峰值 7.9GB） |
-| vLLM/SGLang 推理 | 5–10× | 大 | Qwen2.5-VL 已支持；continuous batching + PagedAttention；greedy 语义等价但数值路径不同，必须过 parity gate |
-| int4 量化（AWQ/GPTQ） | 2–3× | 改输出 | 与冻结 benchmark 不兼容，仅限非基准场景，不进主线 |
-| 降分辨率 / 砍 prompt | — | 改模型输入 | 毁可比性，不做 |
-| speculative decoding | 视 draft 模型 | 大 | 对 3B 目标模型复杂度收益比差，暂不列 |
