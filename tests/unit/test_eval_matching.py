@@ -1,4 +1,4 @@
-"""Unit tests for M09 v1 class-wise greedy matching (S09 plan section 2.4).
+"""Unit tests for Eval v1 class-wise greedy matching (S09 plan section 2.4).
 
 Run:
     ``conda activate autovla_codeclean && cd /root/autodl-tmp/drivealign_workspace && \

@@ -3,7 +3,7 @@
 Purpose:
     Freeze the P1.3 gate cases: behind corners discard the whole box, a
     fully-inside AABB is observable, a border-crossing AABB is inferable
-    with the CLIPPED bbox (the box M09 IoU scoring must reuse), a
+    with the CLIPPED bbox (the box Eval IoU scoring must reuse), a
     non-intersecting AABB is unscorable, and the anti-degeneration area
     fraction is enforced when enabled.
 

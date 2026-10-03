@@ -1,11 +1,11 @@
-"""M09 v1 evaluator: predictions + frozen GT -> m09_report (S09).
+"""Eval v1 evaluator: predictions + frozen GT -> eval_report (S09).
 
 Purpose:
     Read the Base benchmark predictions JSONL, locate every anchor's frozen
     record in the dataset shards through the anchor manifest, verify the
     record hash, score every anchor (:func:`score_anchor`), aggregate the
     full plan-section-3 report, attach scene-cluster bootstrap CIs and the
-    cost summary, and write ``m09_report.json`` / ``m09_report.md`` /
+    cost summary, and write ``eval_report.json`` / ``eval_report.md`` /
     ``anchor_scores.jsonl``. The evaluator is strictly read-only on inputs.
     Determinism: with identical predictions and config the report JSON is
     byte-identical across reruns (sorted keys, no timestamps, no git state).
@@ -18,11 +18,11 @@ Purpose:
 
 Example launch command:
     ``conda activate autovla_codeclean && cd /root/autodl-tmp/drivealign_workspace && \
-    PYTHONPATH=DriveAlign/src python -m drivealign.cli.m09_evaluate \
+    PYTHONPATH=DriveAlign/src python -m drivealign.cli.evaluate \
     --predictions runs/S09_base_benchmark/predictions.jsonl \
     --anchor-manifest data/dataset_v4/anchor_policy_manifest.json \
     --dataset-root data/dataset_v4 \
-    --config DriveAlign/configs/evaluation/m09_v1.yaml \
+    --config DriveAlign/configs/evaluation/eval_v1.yaml \
     --out runs/S09_base_benchmark``
 """
 
@@ -116,7 +116,7 @@ def load_gt_outputs(
 # derived report blocks
 # ---------------------------------------------------------------------------
 
-#: Frozen M09 v1 enums (mirrored in m09_v1.yaml; pinned by unit tests).
+#: Frozen Eval v1 enums (mirrored in eval_v1.yaml; pinned by unit tests).
 _SPEED_ACTIONS = ("ACCELERATE", "KEEP_SPEED", "DECELERATE", "STOP")
 _RISK_FACTORS = (
     "pedestrian_crossing",
@@ -141,7 +141,7 @@ def subset_statistics(
     Uses exactly the same counting helpers as :func:`aggregate`, so point
     estimates and CI replicates share one definition. ``parse_rate`` uses the
     subset size as its denominator (the subset plays the role of the scored
-    set during resampling). The enum defaults mirror m09_v1.yaml; a pin test
+    set during resampling). The enum defaults mirror eval_v1.yaml; a pin test
     keeps config and constants identical.
     """
     ok = parse_ok_scores(subset_scores)
@@ -257,7 +257,7 @@ def run_evaluation(
     out_dir: str | Path,
     counterfactual_paths: Mapping[str, str | Path] | None = None,
 ) -> dict[str, Any]:
-    """Run the full M09 v1 evaluation and write the report artifacts."""
+    """Run the full Eval v1 evaluation and write the report artifacts."""
     config_bytes = Path(config_path).read_bytes()
     config = yaml.safe_load(config_bytes)
     manifest = json.loads(Path(anchor_manifest_path).read_text(encoding="utf-8"))
@@ -332,7 +332,7 @@ def run_evaluation(
         report["counterfactual"] = counterfactual_block
 
     report["meta"] = {
-        "m09_version": str(config["m09_version"]),
+        "eval_version": str(config["eval_version"]),
         "config_status": str(config.get("status", "unknown")),
         "config_sha256": hashlib.sha256(config_bytes).hexdigest(),
         "contract_version": str(manifest.get("contract_version", "unknown")),
@@ -344,14 +344,14 @@ def run_evaluation(
 
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
-    report_json = out / "m09_report.json"
+    report_json = out / "eval_report.json"
     report_json.write_text(
         json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
     with (out / "anchor_scores.jsonl").open("w", encoding="utf-8") as handle:
         for score in scores:
             handle.write(json.dumps(score, sort_keys=True) + "\n")
-    (out / "m09_report.md").write_text(_render_markdown(report), encoding="utf-8")
+    (out / "eval_report.md").write_text(_render_markdown(report), encoding="utf-8")
     return report
 
 
@@ -375,10 +375,10 @@ def _fmt(value: Any) -> str:
 
 def _render_markdown(report: Mapping[str, Any]) -> str:
     """Deterministic human rendering of the report (no locale/time state)."""
-    lines: list[str] = ["# M09 v1 report", ""]
+    lines: list[str] = ["# Eval v1 report", ""]
     meta = report["meta"]
     lines += [
-        f"- m09_version: {meta['m09_version']} (config status: {meta['config_status']})",
+        f"- eval_version: {meta['eval_version']} (config status: {meta['config_status']})",
         f"- contract_version: {meta['contract_version']}",
         f"- evaluation_split: {meta['evaluation_split']}",
         f"- config_sha256: `{meta['config_sha256']}`",

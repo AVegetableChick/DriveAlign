@@ -1,4 +1,4 @@
-"""M09 v1 metrics: per-anchor scoring and aggregate report content (S09).
+"""Eval v1 metrics: per-anchor scoring and aggregate report content (S09).
 
 Purpose:
     Implement every metric key of the S09 plan section 3 table. GT comes from
@@ -296,7 +296,7 @@ def aggregate(
     primary_iou_threshold: float,
     iou_thresholds: Sequence[float],
 ) -> dict[str, Any]:
-    """Assemble the m09_report content dict (plan section 3 keys)."""
+    """Assemble the eval_report content dict (plan section 3 keys)."""
     ok = parse_ok_scores(scores)
     n_scored = len(scores)
     n_ok = len(ok)

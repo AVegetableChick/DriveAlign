@@ -1,4 +1,4 @@
-"""M09 v1 object matching: class-wise greedy IoU assignment (S09).
+"""Eval v1 object matching: class-wise greedy IoU assignment (S09).
 
 Purpose:
     Pair predicted critical objects against GT critical objects for the

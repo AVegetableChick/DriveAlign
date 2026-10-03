@@ -1,4 +1,4 @@
-"""End-to-end unit tests for the M09 v1 evaluator (S09 plan section 2.4).
+"""End-to-end unit tests for the Eval v1 evaluator (S09 plan section 2.4).
 
 Builds a synthetic four-anchor dataset (two shards, two scenes), a matching
 anchor manifest with true record hashes, and synthetic predictions; asserts
@@ -138,12 +138,12 @@ def build_world(tmp_path: Path):
         "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows), encoding="utf-8"
     )
 
-    config_path = tmp_path / "m09_test.yaml"
+    config_path = tmp_path / "eval_test.yaml"
     config_path.write_text(
         yaml.safe_dump(
             {
                 "status": "provisional",
-                "m09_version": "m09_v1",
+                "eval_version": "eval_v1",
                 "evaluation_split": SPLIT,
                 "matching": {"iou_thresholds": [0.5], "primary_iou_threshold": 0.5},
                 "taxonomies": {
@@ -169,8 +169,8 @@ class TestRunEvaluation:
         report = run_evaluation(
             predictions_path, manifest_path, dataset_root, config_path, tmp_path / "out"
         )
-        assert (tmp_path / "out" / "m09_report.json").is_file()
-        assert (tmp_path / "out" / "m09_report.md").is_file()
+        assert (tmp_path / "out" / "eval_report.json").is_file()
+        assert (tmp_path / "out" / "eval_report.md").is_file()
         assert (tmp_path / "out" / "anchor_scores.jsonl").is_file()
         assert report["coverage"] == {
             "anchors_expected": 4, "anchors_scored": 4,
@@ -185,7 +185,7 @@ class TestRunEvaluation:
         # {a, b, c}; numerator = {b} -> 1/3.
         assert report["overconservative_stop_rate"] == pytest.approx(1.0 / 3.0)
         assert report["cost_summary"]["gpu_hours"] == pytest.approx(6.0 / 3600.0)
-        assert report["meta"]["m09_version"] == "m09_v1"
+        assert report["meta"]["eval_version"] == "eval_v1"
         assert len(report["bootstrap_ci"]) > 0
 
     def test_rerun_is_byte_identical(self, tmp_path):
@@ -196,8 +196,8 @@ class TestRunEvaluation:
         run_evaluation(
             predictions_path, manifest_path, dataset_root, config_path, tmp_path / "out_b"
         )
-        assert (tmp_path / "out_a" / "m09_report.json").read_bytes() == (
-            tmp_path / "out_b" / "m09_report.json"
+        assert (tmp_path / "out_a" / "eval_report.json").read_bytes() == (
+            tmp_path / "out_b" / "eval_report.json"
         ).read_bytes()
         assert (tmp_path / "out_a" / "anchor_scores.jsonl").read_bytes() == (
             tmp_path / "out_b" / "anchor_scores.jsonl"

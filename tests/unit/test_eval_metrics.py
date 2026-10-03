@@ -1,4 +1,4 @@
-"""Unit tests for M09 v1 metrics (S09 plan section 2.4).
+"""Unit tests for Eval v1 metrics (S09 plan section 2.4).
 
 A four-anchor synthetic scenario with hand-computed expectations covers the
 full aggregate report; focused tests cover parse-failure exclusion, the

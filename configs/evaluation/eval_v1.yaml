@@ -1,12 +1,12 @@
-# Stage 09 M09 v1 evaluation configuration.
+# Stage 09 Eval v1 evaluation configuration.
 #
 # PROVISIONAL until the S09 Step 5 freeze (status flips to frozen before the
-# official report is generated; only then may m09_report be quoted as the
+# official report is generated; only then may eval_report be quoted as the
 # frozen Base benchmark). Metric definitions: S09 plan section 3/3.1. All
 # closed enums below are pinned byte-identical to contract v5 by unit tests.
 
 status: provisional
-m09_version: m09_v1
+eval_version: eval_v1
 evaluation_split: test
 
 matching:

@@ -17,17 +17,17 @@ git commit -m "[Docs] S09 implementation plan (single-frame base benchmark)"
 
 - **推理栈已就绪**（S02/S03/S04）：`inference/structured_runner.py`——`SampleRequest(image, available_speed)` → 冻结 prompt → `generate_one` → 严格契约解析；批处理单样本失败永不中止（generation_failure 降级记录）；telemetry 含 input/output tokens、延迟、峰值显存。`make_blank_image` / `make_shuffled_image` 反事实助手已实现并有单测。
 - **1F 输入政策已实现**（S06）：`records/serializer.py` `serialize(ModelInputs, InputPolicy.ONE_FRAME)` 只取 `frames[-1]`；`request_hash_1f` 可从 record 重算。
-- **数据已冻结**（S08）：`data/dataset_v4`（contract v4，GT 全回填）。test = 5,468 anchors；迭代入口 `anchor_policy_manifest.json` 字段：token → split/shard/line/record_hash/request_hash_1f/request_hash_4f/scene_token/anchor_image_relpath（dataroot 相对路径，dataroot = `data/nuscenes/trainval`）。GT = record 内 `training_targets.expected_output`（critical_objects / risk_factors / reasoning / yield_required / speed_action），评测与训练同源同规则，M09 评分无需 nuScenes 原始表。
+- **数据已冻结**（S08）：`data/dataset_v4`（contract v4，GT 全回填）。test = 5,468 anchors；迭代入口 `anchor_policy_manifest.json` 字段：token → split/shard/line/record_hash/request_hash_1f/request_hash_4f/scene_token/anchor_image_relpath（dataroot 相对路径，dataroot = `data/nuscenes/trainval`）。GT = record 内 `training_targets.expected_output`（critical_objects / risk_factors / reasoning / yield_required / speed_action），评测与训练同源同规则，Eval 评分无需 nuScenes 原始表。
 - **Base checkpoint**：`models/Qwen2.5-VL-3B-Instruct`（S01 加载链路可用）。
 - **speed 字符串格式沿用现有约定**：`"5.200 m/s"` 样式（`%.3f`，见 `test_records_serializer.py`），写入 base_1f.yaml 冻结。
-- **M09 evaluator 未构建**：`evaluation/` 仅有 `projection.py` + `box_render.py`；S08 实际交付为 GT 回填侧（`gt/` 包）。**M09 v1 是本阶段最大新增工作项（§2.2）**。
+- **Eval evaluator 未构建**：`evaluation/` 仅有 `projection.py` + `box_render.py`；S08 实际交付为 GT 回填侧（`gt/` 包）。**Eval v1 是本阶段最大新增工作项（§2.2）**。
 - **模型面裁定（2026-10-03 用户拍板）：prompt 必须与 7 项 schema 对齐，以 contract v5 承载，v4 冻结不动**。背景：v4 `prompt.txt` 逐字节继承 v3，risk_factors 措辞仍列 8 项（含 small_following_gap），v4 `output_schema.json` 仅 7 项——Base 被prompt教唆输出 8 项却被 v4 parser 拒绝，等于主动制造 parse 失败。落地机制：**不可原地改 v4 prompt**——request hash 覆盖 prompt 文本（`versions.py`：HASH_FACE_FILES 含 prompt.txt），原地改会使冻结 v4 资产的 request_hash 列永久不可复现（dataset_verify 必死）；v5 = v4 八文件 + 修正版 prompt（7 项），`MODEL_FACE_LINEAGE["v5"]="v5"`（自有模型面）、`DEFAULT_CONTRACT_VERSION="v5"`。连带后果：dataset_v4 记录的 GT/model_inputs 与 prompt 无关，**不重建**；冻结 v4 anchor manifest 的 request_hash 列成为 v3-face 历史值（S08 三 gate 的 PASS 记录不受影响——当时 v3/v4 同 face），S09 起 gate 1 改对 **v5-face manifest**（`drivealign.dataset.manifest` 从冻结 shards 派生；2026-10-03 用户裁定：**替换** `data/dataset_v4/anchor_policy_manifest.json` 为 v5-face 版，原 v3-face 版归档至 `runs/S08_gt_backfill/anchor_policy_manifest_v3face_frozen.json`——数据集目录承载最新权威入口表，face 时代以文件内 `config.contract_version` 字段与归档文件分账）；新增 prompt↔schema 枚举一致性 pin 测试，防同类漂移再发。
 
 ## 2. 模块拆分
 
-> 步骤切分约定（2026-10-03 用户裁定）：**contract v5 落地独立成 Step 1、先于 M09 与运行器（Step 2）**（§4）。理由：v5 是本阶段唯一触碰全局 request hash 语义的变更（模型面 v3→v5 切换、prompt 字节级修正），先单独落地、单独验证、单独提交形成独立回滚边界，再叠加 M09 与运行器代码，合约变更风险与评测代码风险互不纠缠。
+> 步骤切分约定（2026-10-03 用户裁定）：**contract v5 落地独立成 Step 1、先于 Eval 与运行器（Step 2）**（§4）。理由：v5 是本阶段唯一触碰全局 request hash 语义的变更（模型面 v3→v5 切换、prompt 字节级修正），先单独落地、单独验证、单独提交形成独立回滚边界，再叠加 Eval 与运行器代码，合约变更风险与评测代码风险互不纠缠。
 
-### 2.1 contract v5 落地（Step 1，先于 M09）
+### 2.1 contract v5 落地（Step 1，先于 Eval）
 
 | 文件 | 职责 |
 |---|---|
@@ -36,15 +36,17 @@ git commit -m "[Docs] S09 implementation plan (single-frame base benchmark)"
 | `data/dataset_v4/anchor_policy_manifest.json`（替换为 **v5-face**） | **v5-face anchor manifest**：以 `drivealign.dataset.manifest` 从冻结 shards 派生（DEFAULT=v5 自动 stamp v5 request hash），**替换**数据集内 v3-face 原版（原版归档 `runs/S08_gt_backfill/anchor_policy_manifest_v3face_frozen.json`；2026-10-03 用户裁定，物理盘替换由用户 tmux 执行）；S09 gate 1 的比对基准，派生日志与 scratch 留存于 `runs/S09_base_benchmark/`。派生需加载 nuScenes trainval（10–15GB RAM）：S08 有 sandbox 跑通先例，OOM 则转用户 tmux |
 | pin 单测（§2.4 首条） | prompt↔schema 一致性 + v5 继承完整性 + v4 资产零改动，随 Step 1 交付 |
 
-### 2.2 新增 M09 v1（`src/drivealign/evaluation/` 扩展，Step 2）
+### 2.2 新增 Eval v1（`src/drivealign/evaluation/` 扩展，Step 2）
+
+> 命名裁定（2026-10-03 用户拍板）：原 "M09 族" 更名为 **eval 族**——`eval_v1.yaml` / `cli/evaluate.py` / `eval_report.{json,md}` / config 字段 `eval_version`（原 m09_v1.yaml / cli/m09_evaluate.py / m09_report / m09_version）。理由：评测器为 S09→S12 对比复用而建，名字不应绑死阶段号；"M09" 不透明。历史实验记录（S03–S08）与 blueprint 的 M01–M09 模块编号体系保留原称谓不改写；`configs/contracts/v5/output_schema.json` description 中的 "M09 oracle" 文案属 request-hash face，冻结不动。
 
 | 文件 | 职责 |
 |---|---|
 | `evaluation/matching.py` | normalized category + bbox IoU + **类内贪心**一对一匹配（2026-10-03 用户裁定，替代 stage 08 文档原拟 Hungarian；理由：≤8×8 规模下与全局最优数值差异可忽略、类内匹配天然禁跨类别使"类别错误=FP+FN"语义更干净、δ_cat 参数消除、无 scipy 依赖；决策台账留痕）。贪心顺序：IoU 降序 → bbox 字典序 tie-break（与预测输出顺序无关，确定性可复现）；IoU < τ_min 的对不允许配对；同 GT 只配一次，落选预测计 FP |
 | `evaluation/metrics.py` | 逐 anchor 分数 + 聚合指标（§3 全表键名逐一实现）；所有分母显式落报告；含 `max_items_hit_rate`（S03-Q5 监控项）与 `overconservative_*` 两键（§3.1） |
 | `evaluation/bootstrap.py` | scene-cluster paired bootstrap（cluster = scene_token；重采样次数 B 与种子预注册），输出 point estimate + 95% CI + scene 数 + denominator |
-| `evaluation/evaluator.py` | M09 入口：读 predictions JSONL + 经 anchor manifest 定位 dataset_v4 shard records（GT 侧）→ 指标 → `m09_report.{json,md}` + `anchor_scores.jsonl`（按 scene 配对所需的逐 anchor 分数）；`m09_version` + config sha256 落档；全程只读 |
-| `cli/m09_evaluate.py` | CLI 封装（`--predictions --anchor-manifest --dataset-root --config --out`） |
+| `evaluation/evaluator.py` | Eval 入口：读 predictions JSONL + 经 anchor manifest 定位 dataset_v4 shard records（GT 侧）→ 指标 → `eval_report.{json,md}` + `anchor_scores.jsonl`（按 scene 配对所需的逐 anchor 分数）；`eval_version` + config sha256 落档；全程只读 |
+| `cli/evaluate.py` | CLI 封装（`--predictions --anchor-manifest --dataset-root --config --out`） |
 
 ### 2.3 新增 benchmark 运行器与配置（Step 2）
 
@@ -53,7 +55,7 @@ git commit -m "[Docs] S09 implementation plan (single-frame base benchmark)"
 | `cli/base_benchmark.py` | test manifest → 逐 anchor 读 shard record → `serialize(ONE_FRAME)` → `SampleRequest`（image = dataroot/anchor_image_relpath；available_speed 按冻结格式）→ 逐条推理 → `predictions.jsonl`：sample_token、request_hash_1f 重算值、input-policy metadata、raw_text、parse status + 错误分类、结构化预测、telemetry。支持 `--resume`（按 sample_token 幂等续跑）、`--anchors-file`（pilot 与反事实子集复用同一入口）、`--image-transform blank|shuffled`（反事实模式，产物写独立文件，不污染主预测） |
 | `configs/benchmark/base_1f.yaml` | 冻结运行配置：checkpoint 路径、contract_version=v5、policy=ONE_FRAME、resolution、greedy decoding（do_sample=false、temperature=0、max_new_tokens=512——沿 S03 截断教训）、seed、dtype、speed 格式 |
 | `configs/benchmark/base_4f.yaml` | **只预注册不运行**：与 base_1f 共享全部字段、仅 policy/输入政策不同；hash 在 Step 2 登记进实验记录，履行 stage 09 gate"Stage 10 配置 hash 已在本阶段运行前登记" |
-| `configs/evaluation/m09_v1.yaml` | 指标口径 + 匹配参数 + bootstrap 参数；status provisional → frozen（Step 5 冻结后才有正式报告） |
+| `configs/evaluation/eval_v1.yaml` | 指标口径 + 匹配参数 + bootstrap 参数；status provisional → frozen（Step 5 冻结后才有正式报告） |
 
 ### 2.4 新增单测（tests/unit/）
 
@@ -62,11 +64,11 @@ git commit -m "[Docs] S09 implementation plan (single-frame base benchmark)"
 - `test_eval_matching`（Step 2）：空集/重复框/IoU 平手 tie-break/跨类别不配对/τ_min 边界/同 GT 只配一次。
 - `test_eval_metrics`（Step 2）：合成预测 × 合成 GT 的逐指标数值与分母断言；over-conservative；maxItems 触顶计数；parse 失败样本的排除语义。
 - `test_eval_bootstrap`（Step 2）：scene cluster 配对差 CI 的确定性（固定种子逐值断言）。
-- 确定性（Step 2）：同一 predictions 两次评测，`m09_report.json` 逐字节一致。
+- 确定性（Step 2）：同一 predictions 两次评测，`eval_report.json` 逐字节一致。
 
-## 3. M09 v1 指标口径（§7 待拍板）
+## 3. Eval v1 指标口径（§7 待拍板）
 
-主指标均报告 point estimate + 95% CI（scene-cluster paired bootstrap）+ scene 数 + denominator。GT 一律取自 record 的 `expected_output`；"parse_ok 集" = parse 成功 anchors。**命名约定：下表"报告键名"即 `m09_report.json` 中的 key，键名直接编码统计量与聚合方式（`<字段>_<统计量>[_<聚合>]`），名称与实现一一对应。**
+主指标均报告 point estimate + 95% CI（scene-cluster paired bootstrap）+ scene 数 + denominator。GT 一律取自 record 的 `expected_output`；"parse_ok 集" = parse 成功 anchors。**命名约定：下表"报告键名"即 `eval_report.json` 中的 key，键名直接编码统计量与聚合方式（`<字段>_<统计量>[_<聚合>]`），名称与实现一一对应。**
 
 | 报告键名 | 分母 | 计算方式 |
 |---|---|---|
@@ -106,14 +108,14 @@ git commit -m "[Docs] S09 implementation plan (single-frame base benchmark)"
 | Step | 内容 | 执行者/环境 |
 |---|---|---|
 | 0 | git 提交本规划（§0） | agent（用户确认后） |
-| 1 | **contract v5 落地（§2.1，独立 step，先于 M09；2026-10-03 用户裁定）**：configs/contracts/v5 八文件（v4 复制 + prompt 8→7 修正）+ versions.py（DEFAULT=v5、MODEL_FACE_LINEAGE v5→v5）+ prompt↔schema pin 单测 + **v5-face anchor manifest 派生并替换 dataset_v4 内 v3-face 版**（原版归档 `runs/S08_gt_backfill/anchor_policy_manifest_v3face_frozen.json`；物理盘替换由用户 tmux 执行）+ 单测全绿 → git commit（代码与单测，独立回滚边界） | agent，sandbox（manifest 替换：用户 tmux） |
-| 2 | base_1f/base_4f 配置预注册（4f 只登记 hash）+ benchmark 运行器（§2.3）+ m09_v1 配置骨架（provisional）+ M09 包（§2.2）+ 单测全绿 → git commit | agent，sandbox |
+| 1 | **contract v5 落地（§2.1，独立 step，先于 Eval；2026-10-03 用户裁定）**：configs/contracts/v5 八文件（v4 复制 + prompt 8→7 修正）+ versions.py（DEFAULT=v5、MODEL_FACE_LINEAGE v5→v5）+ prompt↔schema pin 单测 + **v5-face anchor manifest 派生并替换 dataset_v4 内 v3-face 版**（原版归档 `runs/S08_gt_backfill/anchor_policy_manifest_v3face_frozen.json`；物理盘替换由用户 tmux 执行）+ 单测全绿 → git commit（代码与单测，独立回滚边界） | agent，sandbox（manifest 替换：用户 tmux） |
+| 2 | base_1f/base_4f 配置预注册（4f 只登记 hash）+ benchmark 运行器（§2.3）+ eval_v1 配置骨架（provisional）+ Eval 包（§2.2）+ 单测全绿 → git commit | agent，sandbox |
 | 3 | pilot：预注册反事实子集抽样器先产出子集清单 → 取前 32 anchors 试跑（GPU），报告吞吐/显存/parse 分布/telemetry 完整性 → **用户确认全量排期** | 用户 tmux（GPU） |
 | 4 | 全量 test 推理（5,468）+ 反事实子集（blank/shuffled 各一遍，独立文件） | 用户 tmux |
-| 5 | m09_v1 冻结（provisional → frozen）→ M09 评测 + bootstrap CI + 成本摘要 → gates（§5） | agent，sandbox |
+| 5 | eval_v1 冻结（provisional → frozen）→ Eval 评测 + bootstrap CI + 成本摘要 → gates（§5） | agent，sandbox |
 | 6 | 实验记录落档（决策台账 + 参数冻结 + 阶段关闭）+ git commit | agent |
 
-Step 1 与 Step 2 各自以 commit 收口：v5 属合约代际变更（全局 request hash 语义），与 M09/运行器代码分开提交，任一步出问题可独立回滚而不牵连另一边。
+Step 1 与 Step 2 各自以 commit 收口：v5 属合约代际变更（全局 request hash 语义），与 Eval/运行器代码分开提交，任一步出问题可独立回滚而不牵连另一边。
 
 ### Step 2 交付物与 hash 登记（2026-10-03，履行 gate 4 预注册义务）
 
@@ -121,11 +123,11 @@ Step 1 与 Step 2 各自以 commit 收口：v5 属合约代际变更（全局 re
 |---|---|---|
 | `configs/benchmark/base_1f.yaml` | `1aab7db306b17f3688587e5d6006a98bb6a3fcc16326c26b8c8a2066d1332cb4` | frozen，Step 4 将以此运行 |
 | `configs/benchmark/base_4f.yaml` | `793db1beee23f26b4dfc7ad92f425ae7c34e2908133b92156b51bdb5812d5e90` | **仅预注册，S09 全程不运行**（gate 4；Stage 10 起才可执行） |
-| `configs/evaluation/m09_v1.yaml` | `e9312af942e71950e96688e4db1c6ae03b9ca208383aaa97cf02ee3825cf36a0` | provisional；Step 5 冻结（provisional→frozen）后**须重新登记 hash**，正式报告以冻结版 hash 为准 |
+| `configs/evaluation/eval_v1.yaml` | `8bc0f419adb1d9b56b43a718a8676420be59c7659d06ea8c3e6e199b0e0347eb` | provisional；2026-10-03 eval 族更名（`m09_version`→`eval_version`）致 hash 变更并重新登记；Step 5 冻结（provisional→frozen）后**须再次登记 hash**，正式报告以冻结版 hash 为准 |
 
-Step 2 新增代码：`evaluation/{matching,metrics,bootstrap,evaluator}.py`、`cli/{base_benchmark,m09_evaluate}.py`、单测 5 个文件（matching 13 / metrics 16 / bootstrap 8 / evaluator 5 / runner 9）。全量单测 250 passed（含既有 193 条全绿）。
+Step 2 新增代码：`evaluation/{matching,metrics,bootstrap,evaluator}.py`、`cli/{base_benchmark,evaluate}.py`、单测 5 个文件（matching 13 / metrics 16 / bootstrap 8 / evaluator 5 / runner 9）。全量单测 250 passed（含既有 193 条全绿）。
 
-运行器关键防线（实现于 `cli/base_benchmark.py`）：逐 anchor 断言重算 request hash == v5-face manifest 存储值，且 runner 侧 prompt 与 serializer 侧 prompt 逐字节一致——合约 face 错位会在推理时即刻报错而非静默产出错误基准。已登记注意点：M09 报告 `input_tokens_p50` 承载规划原 `visual_tokens_p50` 键（S02 telemetry 无图像 token 单独计数，拆分需动冻结栈，不为之破坏；决策台账 Step 6 复核）。
+运行器关键防线（实现于 `cli/base_benchmark.py`）：逐 anchor 断言重算 request hash == v5-face manifest 存储值，且 runner 侧 prompt 与 serializer 侧 prompt 逐字节一致——合约 face 错位会在推理时即刻报错而非静默产出错误基准。已登记注意点：Eval 报告 `input_tokens_p50` 承载规划原 `visual_tokens_p50` 键（S02 telemetry 无图像 token 单独计数，拆分需动冻结栈，不为之破坏；决策台账 Step 6 复核）。
 
 标准命令模板（Step 4 示例）：
 
@@ -145,12 +147,12 @@ tmux new-session -d -s s09_bench \
 ## 5. Gate 清单（Step 5）
 
 1. **一一对应**：predictions 与 test anchor manifest 逐 token 对应（5,468，零缺失零重复），且逐条 request_hash_1f 重算值 == **v5-face manifest**（`data/dataset_v4/anchor_policy_manifest.json`）存储值——证明推理用的正是冻结请求。原 v3-face 版已归档（`runs/S08_gt_backfill/anchor_policy_manifest_v3face_frozen.json`），不作为本 gate 基准（§1）。
-2. **可复算**：固定脚本由 predictions.jsonl 重跑 M09，报告与正式报告逐字节一致（指标层确定性；生成层不要求逐字节复现，见 §8）。
+2. **可复算**：固定脚本由 predictions.jsonl 重跑 Eval，报告与正式报告逐字节一致（指标层确定性；生成层不要求逐字节复现，见 §8）。
 3. **反事实控制**：blank/shuffled 结果可重现，产物与主预测文件物理分离。
 4. **预注册义务**：base_4f.yaml hash 已在 Step 2 登记于实验记录，全程未运行。
 5. **输入政策审计**：1F 请求仅含 frames[-1] + ego_speed；future fingerprint 扫描零命中。
 6. **CI 完整性**：全部主指标带 point estimate + 95% CI + scene 数 + denominator。
-7. **溯源**：checkpoint 路径与 commit、contract v5 模型面标识、m09_version、各 config sha256 落档。
+7. **溯源**：checkpoint 路径与 commit、contract v5 模型面标识、eval_version、各 config sha256 落档。
 8. **prompt↔schema 一致性**：v5 prompt 枚举与 schema/taxonomy 7 项一致（pin 测试通过）；v4 资产零改动（冻结完好）。
 
 ## 6. 交接（与 S11/S12）
@@ -168,13 +170,13 @@ tmux new-session -d -s s09_bench \
 4. pilot 规模：**32 anchors**；全量排期待 pilot 吞吐数据；
 5. 产物目录：**`runs/S09_base_benchmark/`**；
 6. prompt/schema gap：**用户裁定必须修正 prompt 与 7 项 schema 对齐**，以 contract v5 承载（机制与后果见 §1；v4 冻结不动、数据集不重建、S08 历史gate 记录不受影响）。
-7. 执行编排切分（2026-10-03 追加裁定）：**contract v5 落地独立成 Step 1、先于 M09 与运行器（Step 2）**，两步各自 git commit 形成独立回滚边界。
+7. 执行编排切分（2026-10-03 追加裁定）：**contract v5 落地独立成 Step 1、先于 Eval 与运行器（Step 2）**，两步各自 git commit 形成独立回滚边界。
 8. v5-face manifest 位置（2026-10-03 追加裁定）：**替换** `data/dataset_v4/anchor_policy_manifest.json` 为 v5-face 版（用户裁定：数据集目录应承载最新权威入口表，拒绝"最新 manifest 在 runs/"的布局；物理盘替换由用户 tmux 执行）；原 v3-face 版归档 `runs/S08_gt_backfill/anchor_policy_manifest_v3face_frozen.json`；连带更新 §1/§2.1/§4/§5/§8。
 
 ## 8. 风险与已知限制
 
 - **生成层非确定性**：greedy + 固定 seed + 固定 dtype 尽力保证；GPU kernel（attention/TF32）客观存在非确定性，硬 gate 定在指标可复算（Gate 2）而非生成逐字节复现；torch/cuda 版本随成本摘要落档。
 - **吞吐未知**：5,468 × 反事实子集的墙钟时间由 pilot 实测后定排期，不预估。
-- **M09 v1 指标缺口**：§3 "不在 v1 范围"两项，均已在决策台账留痕，非静默丢弃。
+- **Eval v1 指标缺口**：§3 "不在 v1 范围"两项，均已在决策台账留痕，非静默丢弃。
 - **后置风险**：4F 显存可行性在 S11-4F 前未验证（已知后置风险，S12 前不阻塞）。
 - **face 时代分账**：contract v5 生效后，request hash 存在两套现值加一套归档——v3-face：归档文件 `runs/S08_gt_backfill/anchor_policy_manifest_v3face_frozen.json`（S08 冻结版原样保留）与 dataset_v1 内 manifest（dataset 审计用）；v5-face：`data/dataset_v4/anchor_policy_manifest.json`（2026-10-03 起替换，benchmark/training 权威入口表，文件内 `config.contract_version="v5"` 自标识）。任何未来 parity 审计必须先声明 face 时代，禁止跨代比对 request hash。**已知后果**：dataset_v4 的逐字节确定性重跑（dataset_verify）基线由归档文件承载——若在 v4 时代 commit 下重跑，将在 anchor_policy_manifest.json 一项上报字节差（预期，非资产损坏；以归档文件对照即可恢复原审计结论）。v5 manifest 确定性可复现：重派生须钉住 `--builder-commit 41810e5`。

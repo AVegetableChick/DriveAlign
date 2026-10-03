@@ -1,7 +1,7 @@
-"""Scene-cluster bootstrap for M09 metrics (S09 plan section 2.1/3).
+"""Scene-cluster bootstrap for Eval v1 metrics (S09 plan section 2.1/3).
 
 Purpose:
-    Percentile confidence intervals for M09 statistics via scene-cluster
+    Percentile confidence intervals for Eval v1 statistics via scene-cluster
     resampling: scenes (not anchors) are drawn with replacement so the
     within-scene correlation between anchors is preserved. One shared
     resample index matrix drives every statistic per replicate, which makes

@@ -14,7 +14,7 @@ Purpose:
       image; bbox_2d = the raw AABB.
     - ``inferable``: all corners in front, AABB crossing the image border
       but intersecting it; bbox_2d = the CLIPPED AABB (the same clipped box
-      is used for the expected_output bbox and the M09 IoU scoring — GT and
+      is used for the expected_output bbox and the Eval IoU scoring — GT and
       scoring share one implementation, so no double bookkeeping).
 
     Gating runs BEFORE pool selection (visibility-first principle): only
