@@ -21,7 +21,7 @@ git commit -m "[Docs] S09 implementation plan (single-frame base benchmark)"
 - **Base checkpoint**：`models/Qwen2.5-VL-3B-Instruct`（S01 加载链路可用）。
 - **speed 字符串格式沿用现有约定**：`"5.200 m/s"` 样式（`%.3f`，见 `test_records_serializer.py`），写入 base_1f.yaml 冻结。
 - **M09 evaluator 未构建**：`evaluation/` 仅有 `projection.py` + `box_render.py`；S08 实际交付为 GT 回填侧（`gt/` 包）。**M09 v1 是本阶段最大新增工作项（§2.2）**。
-- **模型面裁定（2026-10-03 用户拍板）：prompt 必须与 7 项 schema 对齐，以 contract v5 承载，v4 冻结不动**。背景：v4 `prompt.txt` 逐字节继承 v3，risk_factors 措辞仍列 8 项（含 small_following_gap），v4 `output_schema.json` 仅 7 项——Base 被prompt教唆输出 8 项却被 v4 parser 拒绝，等于主动制造 parse 失败。落地机制：**不可原地改 v4 prompt**——request hash 覆盖 prompt 文本（`versions.py`：HASH_FACE_FILES 含 prompt.txt），原地改会使冻结 v4 资产的 request_hash 列永久不可复现（dataset_verify 必死）；v5 = v4 八文件 + 修正版 prompt（7 项），`MODEL_FACE_LINEAGE["v5"]="v5"`（自有模型面）、`DEFAULT_CONTRACT_VERSION="v5"`。连带后果：dataset_v4 记录的 GT/model_inputs 与 prompt 无关，**不重建**；冻结 v4 anchor manifest 的 request_hash 列成为 v3-face 历史值（S08 三 gate 的 PASS 记录不受影响——当时 v3/v4 同 face），S09 起 gate 1 改对 **v5-face 派生 manifest**（`drivealign.dataset.manifest` 派生，落 runs/ 不动冻结资产）；新增 prompt↔schema 枚举一致性 pin 测试，防同类漂移再发。
+- **模型面裁定（2026-10-03 用户拍板）：prompt 必须与 7 项 schema 对齐，以 contract v5 承载，v4 冻结不动**。背景：v4 `prompt.txt` 逐字节继承 v3，risk_factors 措辞仍列 8 项（含 small_following_gap），v4 `output_schema.json` 仅 7 项——Base 被prompt教唆输出 8 项却被 v4 parser 拒绝，等于主动制造 parse 失败。落地机制：**不可原地改 v4 prompt**——request hash 覆盖 prompt 文本（`versions.py`：HASH_FACE_FILES 含 prompt.txt），原地改会使冻结 v4 资产的 request_hash 列永久不可复现（dataset_verify 必死）；v5 = v4 八文件 + 修正版 prompt（7 项），`MODEL_FACE_LINEAGE["v5"]="v5"`（自有模型面）、`DEFAULT_CONTRACT_VERSION="v5"`。连带后果：dataset_v4 记录的 GT/model_inputs 与 prompt 无关，**不重建**；冻结 v4 anchor manifest 的 request_hash 列成为 v3-face 历史值（S08 三 gate 的 PASS 记录不受影响——当时 v3/v4 同 face），S09 起 gate 1 改对 **v5-face manifest**（`drivealign.dataset.manifest` 从冻结 shards 派生；2026-10-03 用户裁定：**替换** `data/dataset_v4/anchor_policy_manifest.json` 为 v5-face 版，原 v3-face 版归档至 `runs/S08_gt_backfill/anchor_policy_manifest_v3face_frozen.json`——数据集目录承载最新权威入口表，face 时代以文件内 `config.contract_version` 字段与归档文件分账）；新增 prompt↔schema 枚举一致性 pin 测试，防同类漂移再发。
 
 ## 2. 模块拆分
 
@@ -33,7 +33,7 @@ git commit -m "[Docs] S09 implementation plan (single-frame base benchmark)"
 |---|---|
 | `configs/contracts/v5/` | **prompt 修正代际**：v4 八文件复制 + `prompt.txt` 修正（risk_factors 措辞 8→7 项，删 small_following_gap 行；其余逐字节不变） |
 | `src/drivealign/contracts/versions.py` | 增 v5：`AVAILABLE_CONTRACT_VERSIONS += ("v5",)`、`DEFAULT_CONTRACT_VERSION="v5"`、`MODEL_FACE_LINEAGE["v5"]="v5"` + docstring 沿革 |
-| `runs/S09_base_benchmark/anchor_policy_manifest_v5.json` | **v5-face anchor manifest**：以 `drivealign.dataset.manifest` 派生（DEFAULT=v5 自动 stamp v5 request hash），只落 runs/ 不动冻结 v4 资产；S09 gate 1 的比对基准。派生需加载 nuScenes trainval（10–15GB RAM）：S08 有 sandbox 跑通先例，OOM 则转用户 tmux |
+| `data/dataset_v4/anchor_policy_manifest.json`（替换为 **v5-face**） | **v5-face anchor manifest**：以 `drivealign.dataset.manifest` 从冻结 shards 派生（DEFAULT=v5 自动 stamp v5 request hash），**替换**数据集内 v3-face 原版（原版归档 `runs/S08_gt_backfill/anchor_policy_manifest_v3face_frozen.json`；2026-10-03 用户裁定，物理盘替换由用户 tmux 执行）；S09 gate 1 的比对基准，派生日志与 scratch 留存于 `runs/S09_base_benchmark/`。派生需加载 nuScenes trainval（10–15GB RAM）：S08 有 sandbox 跑通先例，OOM 则转用户 tmux |
 | pin 单测（§2.4 首条） | prompt↔schema 一致性 + v5 继承完整性 + v4 资产零改动，随 Step 1 交付 |
 
 ### 2.2 新增 M09 v1（`src/drivealign/evaluation/` 扩展，Step 2）
@@ -106,7 +106,7 @@ git commit -m "[Docs] S09 implementation plan (single-frame base benchmark)"
 | Step | 内容 | 执行者/环境 |
 |---|---|---|
 | 0 | git 提交本规划（§0） | agent（用户确认后） |
-| 1 | **contract v5 落地（§2.1，独立 step，先于 M09；2026-10-03 用户裁定）**：configs/contracts/v5 八文件（v4 复制 + prompt 8→7 修正）+ versions.py（DEFAULT=v5、MODEL_FACE_LINEAGE v5→v5）+ prompt↔schema pin 单测 + **v5-face anchor manifest 派生**（runs/S09_base_benchmark/anchor_policy_manifest_v5.json）+ 单测全绿 → git commit（代码与单测，独立回滚边界；runs/ 产物不入库） | agent，sandbox |
+| 1 | **contract v5 落地（§2.1，独立 step，先于 M09；2026-10-03 用户裁定）**：configs/contracts/v5 八文件（v4 复制 + prompt 8→7 修正）+ versions.py（DEFAULT=v5、MODEL_FACE_LINEAGE v5→v5）+ prompt↔schema pin 单测 + **v5-face anchor manifest 派生并替换 dataset_v4 内 v3-face 版**（原版归档 `runs/S08_gt_backfill/anchor_policy_manifest_v3face_frozen.json`；物理盘替换由用户 tmux 执行）+ 单测全绿 → git commit（代码与单测，独立回滚边界） | agent，sandbox（manifest 替换：用户 tmux） |
 | 2 | base_1f/base_4f 配置预注册（4f 只登记 hash）+ benchmark 运行器（§2.3）+ m09_v1 配置骨架（provisional）+ M09 包（§2.2）+ 单测全绿 → git commit | agent，sandbox |
 | 3 | pilot：预注册反事实子集抽样器先产出子集清单 → 取前 32 anchors 试跑（GPU），报告吞吐/显存/parse 分布/telemetry 完整性 → **用户确认全量排期** | 用户 tmux（GPU） |
 | 4 | 全量 test 推理（5,468）+ 反事实子集（blank/shuffled 各一遍，独立文件） | 用户 tmux |
@@ -123,7 +123,7 @@ tmux new-session -d -s s09_bench \
    cd /root/autodl-tmp/drivealign_workspace && \
    set -o pipefail && PYTHONPATH=DriveAlign/src python -m drivealign.cli.base_benchmark \
    --config DriveAlign/configs/benchmark/base_1f.yaml \
-   --anchor-manifest runs/S09_base_benchmark/anchor_policy_manifest_v5.json \
+   --anchor-manifest data/dataset_v4/anchor_policy_manifest.json \
    --dataset-root data/dataset_v4 --nuscenes-dataroot data/nuscenes/trainval \
    --out runs/S09_base_benchmark/predictions.jsonl 2>&1 | tee runs/S09_base_benchmark/infer.log'
 ```
@@ -132,7 +132,7 @@ tmux new-session -d -s s09_bench \
 
 ## 5. Gate 清单（Step 5）
 
-1. **一一对应**：predictions 与 test anchor manifest 逐 token 对应（5,468，零缺失零重复），且逐条 request_hash_1f 重算值 == **v5-face manifest**（`anchor_policy_manifest_v5.json`）存储值——证明推理用的正是冻结请求。冻结 v4 manifest 的 request_hash 列为 v3-face 历史值，不作为本 gate 基准（§1）。
+1. **一一对应**：predictions 与 test anchor manifest 逐 token 对应（5,468，零缺失零重复），且逐条 request_hash_1f 重算值 == **v5-face manifest**（`data/dataset_v4/anchor_policy_manifest.json`）存储值——证明推理用的正是冻结请求。原 v3-face 版已归档（`runs/S08_gt_backfill/anchor_policy_manifest_v3face_frozen.json`），不作为本 gate 基准（§1）。
 2. **可复算**：固定脚本由 predictions.jsonl 重跑 M09，报告与正式报告逐字节一致（指标层确定性；生成层不要求逐字节复现，见 §8）。
 3. **反事实控制**：blank/shuffled 结果可重现，产物与主预测文件物理分离。
 4. **预注册义务**：base_4f.yaml hash 已在 Step 2 登记于实验记录，全程未运行。
@@ -157,6 +157,7 @@ tmux new-session -d -s s09_bench \
 5. 产物目录：**`runs/S09_base_benchmark/`**；
 6. prompt/schema gap：**用户裁定必须修正 prompt 与 7 项 schema 对齐**，以 contract v5 承载（机制与后果见 §1；v4 冻结不动、数据集不重建、S08 历史gate 记录不受影响）。
 7. 执行编排切分（2026-10-03 追加裁定）：**contract v5 落地独立成 Step 1、先于 M09 与运行器（Step 2）**，两步各自 git commit 形成独立回滚边界。
+8. v5-face manifest 位置（2026-10-03 追加裁定）：**替换** `data/dataset_v4/anchor_policy_manifest.json` 为 v5-face 版（用户裁定：数据集目录应承载最新权威入口表，拒绝"最新 manifest 在 runs/"的布局；物理盘替换由用户 tmux 执行）；原 v3-face 版归档 `runs/S08_gt_backfill/anchor_policy_manifest_v3face_frozen.json`；连带更新 §1/§2.1/§4/§5/§8。
 
 ## 8. 风险与已知限制
 
@@ -164,4 +165,4 @@ tmux new-session -d -s s09_bench \
 - **吞吐未知**：5,468 × 反事实子集的墙钟时间由 pilot 实测后定排期，不预估。
 - **M09 v1 指标缺口**：§3 "不在 v1 范围"两项，均已在决策台账留痕，非静默丢弃。
 - **后置风险**：4F 显存可行性在 S11-4F 前未验证（已知后置风险，S12 前不阻塞）。
-- **face 时代分账**：contract v5 生效后，request hash 存在三套历史值——v3/v4 冻结 manifest 为 v3-face（dataset 审计用）、S09 起为 v5-face（benchmark/training 用）。任何未来 parity 审计必须先声明 face 时代，禁止跨代比对 request hash；v5 派生 manifest 确定性可复现（同输入同 hash），不构成冻结资产依赖。
+- **face 时代分账**：contract v5 生效后，request hash 存在两套现值加一套归档——v3-face：归档文件 `runs/S08_gt_backfill/anchor_policy_manifest_v3face_frozen.json`（S08 冻结版原样保留）与 dataset_v1 内 manifest（dataset 审计用）；v5-face：`data/dataset_v4/anchor_policy_manifest.json`（2026-10-03 起替换，benchmark/training 权威入口表，文件内 `config.contract_version="v5"` 自标识）。任何未来 parity 审计必须先声明 face 时代，禁止跨代比对 request hash。**已知后果**：dataset_v4 的逐字节确定性重跑（dataset_verify）基线由归档文件承载——若在 v4 时代 commit 下重跑，将在 anchor_policy_manifest.json 一项上报字节差（预期，非资产损坏；以归档文件对照即可恢复原审计结论）。v5 manifest 确定性可复现：重派生须钉住 `--builder-commit 41810e5`。
