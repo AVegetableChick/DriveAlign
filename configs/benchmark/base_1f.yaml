@@ -1,0 +1,36 @@
+# Stage 09 base benchmark - single-frame (1F) run configuration.
+#
+# Pre-registered 2026-10-03 before any test-split inference (stage 09 gate:
+# this file's sha256 is registered in the S09 experiment record before the
+# pilot runs). Contract v5 is the prompt-corrected generation: the
+# risk_factors wording lists the 7-item taxonomy (small_following_gap
+# removed) so the Base model is no longer taught to emit an enum value the
+# parser rejects (S09 plan section 1). Greedy decoding and the 512-token
+# budget carry the S03 truncation lesson.
+
+status: frozen
+run_name: base_1f
+split: test
+input_policy: 1F
+contract_version: v5
+image_transform: null
+
+model:
+  path: /root/autodl-tmp/drivealign_workspace/models/Qwen2.5-VL-3B-Instruct
+  revision: null
+  dtype: bfloat16
+  device_map: auto
+  attn_implementation: flash_attention_2
+  processor:
+    use_fast: true
+
+runtime:
+  local_files_only: true
+
+generation:
+  do_sample: false
+  temperature: 0.0
+  max_new_tokens: 512
+
+speed_line_precision: 3
+seed: 0

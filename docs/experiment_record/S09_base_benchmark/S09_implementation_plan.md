@@ -115,6 +115,18 @@ git commit -m "[Docs] S09 implementation plan (single-frame base benchmark)"
 
 Step 1 与 Step 2 各自以 commit 收口：v5 属合约代际变更（全局 request hash 语义），与 M09/运行器代码分开提交，任一步出问题可独立回滚而不牵连另一边。
 
+### Step 2 交付物与 hash 登记（2026-10-03，履行 gate 4 预注册义务）
+
+| 产物 | sha256 | 状态 |
+|---|---|---|
+| `configs/benchmark/base_1f.yaml` | `1aab7db306b17f3688587e5d6006a98bb6a3fcc16326c26b8c8a2066d1332cb4` | frozen，Step 4 将以此运行 |
+| `configs/benchmark/base_4f.yaml` | `793db1beee23f26b4dfc7ad92f425ae7c34e2908133b92156b51bdb5812d5e90` | **仅预注册，S09 全程不运行**（gate 4；Stage 10 起才可执行） |
+| `configs/evaluation/m09_v1.yaml` | `e9312af942e71950e96688e4db1c6ae03b9ca208383aaa97cf02ee3825cf36a0` | provisional；Step 5 冻结（provisional→frozen）后**须重新登记 hash**，正式报告以冻结版 hash 为准 |
+
+Step 2 新增代码：`evaluation/{matching,metrics,bootstrap,evaluator}.py`、`cli/{base_benchmark,m09_evaluate}.py`、单测 5 个文件（matching 13 / metrics 16 / bootstrap 8 / evaluator 5 / runner 9）。全量单测 250 passed（含既有 193 条全绿）。
+
+运行器关键防线（实现于 `cli/base_benchmark.py`）：逐 anchor 断言重算 request hash == v5-face manifest 存储值，且 runner 侧 prompt 与 serializer 侧 prompt 逐字节一致——合约 face 错位会在推理时即刻报错而非静默产出错误基准。已登记注意点：M09 报告 `input_tokens_p50` 承载规划原 `visual_tokens_p50` 键（S02 telemetry 无图像 token 单独计数，拆分需动冻结栈，不为之破坏；决策台账 Step 6 复核）。
+
 标准命令模板（Step 4 示例）：
 
 ```

@@ -1,0 +1,34 @@
+# Stage 09 base benchmark - four-frame (4F) run configuration.
+#
+# PRE-REGISTERED ONLY: the 4F half is NOT run in Stage 09 (chain ruling
+# S09 -> S11(1F) -> S12; stage 09 gate requires the Stage 10 config hash to
+# be registered before this stage runs). Identical to base_1f.yaml except
+# input_policy; any other divergence must be justified in the S09 decision
+# log. sha256 registered in the S09 experiment record at Step 1/2.
+
+status: frozen
+run_name: base_4f
+split: test
+input_policy: 4F
+contract_version: v5
+image_transform: null
+
+model:
+  path: /root/autodl-tmp/drivealign_workspace/models/Qwen2.5-VL-3B-Instruct
+  revision: null
+  dtype: bfloat16
+  device_map: auto
+  attn_implementation: flash_attention_2
+  processor:
+    use_fast: true
+
+runtime:
+  local_files_only: true
+
+generation:
+  do_sample: false
+  temperature: 0.0
+  max_new_tokens: 512
+
+speed_line_precision: 3
+seed: 0
