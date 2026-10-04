@@ -1,6 +1,6 @@
 # S09 Benchmark 记录：1F 全量推理（test 5,468）
 
-> 状态：**运行中/待回填**。本文档预置于推理启动前，`结果记录`区在跑完后由 agent 核验回填。
+> 状态：**已完成（2026-10-04）**，结果区已回填；gates 1/2 PASS，gate 3 见下方说明。
 > 配置：`configs/benchmark/base_1f.yaml`（frozen，sha256 登记见规划 §4）；contract v5-face；greedy 解码。
 
 ## 命令（tmux 内直接执行）
@@ -30,18 +30,26 @@ PYTHONPATH=DriveAlign/src python -m drivealign.cli.base_benchmark \
 - `| tee` 前必须 `set -o pipefail`；只跑本命令不连跑反事实（GPU 串行，反事实单独跑，见 `S09_benchmark_counterfactual.md`）；
 - 输出文件与 pilot 文件严格分离（resume 语义按文件内 token 计）。
 
-## 结果记录（跑完后回填）
+## 结果记录（2026-10-04 回填）
 
-- [ ] 起止时间 / 总耗时：
-- [ ] 吞吐（anchors/s）与显存峰值：
-- [ ] coverage 对账：anchors_scored = 5,468；missing_predictions / extra_predictions = 0（evaluator 核验）；
-- [ ] parse 分布：parse_rate、parse_error_counts 按 S03 taxonomy 分列；
-- [ ] telemetry 完整性：抽样 telemetry 非空、request_hash_1f 与 manifest 一致；
-- [ ] 产物路径确认：predictions_full.jsonl 行数 = 5,468。
+- [x] 起止时间 / 总耗时：2026-10-03 晚 → 2026-10-04 08:35，`wall_seconds = 30,609.6`（≈8.5 h，与 pilot 估算一致）；
+- [x] 吞吐与显存：5,468 / 30,609.6 s = **0.179 anchors/s**；latency p50 = 4.98 s / p90 = 7.87 s / mean = 5.52 s；峰值显存 **7.94 GiB**（input_tokens p50 = 2,335，output_tokens p50 = 164 / p90 = 266）；
+- [x] coverage 对账：rows = 5,468，unique = 5,468，dup = 0；与 test manifest 逐 token 对账 **missing = 0 / extra = 0**；config sha256 = `1aab7db3…1332cb4` 与登记值一致；
+- [x] parse 分布：**parse_ok = 5,449/5,468（99.65%）**；错误按 S03 taxonomy：`json_parse_failure` 14、`schema_failure` 4、`semantic_range_failure` 1、`generation_failure` 0；14 条 output_tokens 触顶 512，其中 13 条即截断型 json_parse 失败——截断是主导失败模式（0.24%），与 S03 教训一致（max_new_tokens=512 为冻结值，保持不动）；
+- [x] telemetry 完整性：5,468/5,468 telemetry 非空；`request_hash_match` **5,468/5,468 全 true**（v5-face manifest 逐值一致）；`record_hash`/`request_hash` 均逐行落档；
+- [x] 产物路径确认：`runs/S09_base_benchmark/predictions_full.jsonl`（24.8 MB）+ `run_summary_predictions_full.json`。
+
+## 初步行为观察（非 gate，Base 先验画像）
+
+- `speed_action`：DECELERATE 4,724（86.7%）/ KEEP_SPEED 716（13.1%）/ STOP 9（0.2%）/ **ACCELERATE 0**；
+- `yield_required`：true 4,524（82.9%）；
+- `risk_factors` 帧计数：oncoming_traffic 3,618（66%）占绝对主导，corridor_conflict 915、pedestrian_crossing 904、lead_vehicle_braking 154、stationary_obstacle 72、congestion 121、vehicle_merging 63；
+- 对象数/帧 mean = 2.30，max_items 触顶率 2.50%。
+- 解读：Base 极度保守（近全减速 + 82.9% 让行 + 零加速），`overconservative_*` 两个代理指标预计读数很高——这正是 S09 要建立的基线参照，方向符合"未对齐 Base"预期，留待 Step 5 正式报告量化。
 
 ## 验收 gates（进入 Step 5 的前提）
 
-1. 行数与 token 集合与 test manifest 逐一对应（无缺无多）；
-2. 单样本失败未中止批处理（generation_failure 降级行存在则记录其数量）；
-3. `--resume` 重跑一遍末尾 10 token 无新增行（幂等性抽查）。
+1. 行数与 token 集合与 test manifest 逐一对应（无缺无多）——**PASS**（missing=0/extra=0）；
+2. 单样本失败未中止批处理——**PASS**（generation_failure = 0；19 条 parse 失败均降级记录且批处理继续）；
+3. `--resume` 重跑末尾 10 token 无新增行（幂等性抽查）——**待办**：需 GPU 重载模型，合并到下次任何 resume 运行时顺带核验（观察 `anchors_done_before`/`anchors_new` 计数即可），不阻塞 Step 5。
 
