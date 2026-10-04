@@ -1,6 +1,7 @@
 # S09 实施规划（单帧未微调 Base Benchmark，2026-10-03）
 
-> 状态：规划草案，待用户拍板（§7）。本阶段依据 `docs/project_stages/09_single_frame_base_benchmark.md`。
+> 状态：**已执行完毕并关闭（2026-10-05）**——Step 0–6 全部完成，gates 判定与阶段关闭核对见 `S09_decision_log.md` §3；本规划保留执行时的原始口径（含 §7 拍板记录）。
+> 本阶段依据 `docs/project_stages/09_single_frame_base_benchmark.md`。
 > 链路裁定（已与用户确认）：执行顺序 S09 → S11（仅 1F 半边）→ S12；S10 与 S11-4F 后置，S09 承担的预注册义务见 §4 Step 2。
 > 执行环境约定：沿用 S08——命令先 `conda activate autovla_codeclean`；长跑（GPU 推理）用 tmux 且 `| tee` 前必加 `set -o pipefail`；物理盘（/root/autodl-tmp/datasets）写入只能由用户执行，workspace 内 `runs/` 写入可由 agent sandbox 执行。
 
@@ -107,13 +108,13 @@ git commit -m "[Docs] S09 implementation plan (single-frame base benchmark)"
 
 | Step | 内容 | 执行者/环境 |
 |---|---|---|
-| 0 | git 提交本规划（§0） | agent（用户确认后） |
-| 1 | **contract v5 落地（§2.1，独立 step，先于 Eval；2026-10-03 用户裁定）**：configs/contracts/v5 八文件（v4 复制 + prompt 8→7 修正）+ versions.py（DEFAULT=v5、MODEL_FACE_LINEAGE v5→v5）+ prompt↔schema pin 单测 + **v5-face anchor manifest 派生并替换 dataset_v4 内 v3-face 版**（原版归档 `runs/S08_gt_backfill/anchor_policy_manifest_v3face_frozen.json`；物理盘替换由用户 tmux 执行）+ 单测全绿 → git commit（代码与单测，独立回滚边界） | agent，sandbox（manifest 替换：用户 tmux） |
-| 2 | base_1f/base_4f 配置预注册（4f 只登记 hash）+ benchmark 运行器（§2.3）+ eval_v1 配置骨架（provisional）+ Eval 包（§2.2）+ 单测全绿 → git commit | agent，sandbox |
-| 3 | pilot：预注册反事实子集抽样器先产出子集清单 → 取前 32 anchors 试跑（GPU），报告吞吐/显存/parse 分布/telemetry 完整性 → **用户确认全量排期** | 用户 tmux（GPU） |
-| 4 | 全量 test 推理（5,468）+ 反事实子集（blank/shuffled 各一遍，独立文件） | 用户 tmux |
-| 5 | eval_v1 冻结（provisional → frozen）→ Eval 评测 + bootstrap CI + 成本摘要 → gates（§5） | agent，sandbox |
-| 6 | 实验记录落档（决策台账 + 参数冻结 + 阶段关闭）+ git commit | agent |
+| 0 | git 提交本规划（§0）✅ **已完成** | agent（用户确认后） |
+| 1 | **contract v5 落地（§2.1，独立 step，先于 Eval；2026-10-03 用户裁定）**：configs/contracts/v5 八文件（v4 复制 + prompt 8→7 修正）+ versions.py（DEFAULT=v5、MODEL_FACE_LINEAGE v5→v5）+ prompt↔schema pin 单测 + **v5-face anchor manifest 派生并替换 dataset_v4 内 v3-face 版**（原版归档 `runs/S08_gt_backfill/anchor_policy_manifest_v3face_frozen.json`；物理盘替换由用户 tmux 执行）+ 单测全绿 → git commit（代码与单测，独立回滚边界）✅ **已完成（`41810e5`/`d93485a`）** | agent，sandbox（manifest 替换：用户 tmux） |
+| 2 | base_1f/base_4f 配置预注册（4f 只登记 hash）+ benchmark 运行器（§2.3）+ eval_v1 配置骨架（provisional）+ Eval 包（§2.2）+ 单测全绿 → git commit ✅ **已完成（`3eaf93d`/`8ee51c0`/`6791785`）** | agent，sandbox |
+| 3 | pilot：预注册反事实子集抽样器先产出子集清单 → 取前 32 anchors 试跑（GPU），报告吞吐/显存/parse 分布/telemetry 完整性 → **用户确认全量排期** ✅ **已完成** | 用户 tmux（GPU） |
+| 4 | 全量 test 推理（5,468）+ 反事实子集（blank/shuffled 各一遍，独立文件）✅ **已完成（2026-10-04，run 记录已回填）** | 用户 tmux |
+| 5 | eval_v1 冻结（provisional → frozen）→ Eval 评测 + bootstrap CI + 成本摘要 → gates（§5）✅ **已完成（2026-10-05，`339afbc` 冻结 + `7ed35a3` 分母修复；判定见决策台账 §3.2）** | agent，sandbox |
+| 6 | 实验记录落档（决策台账 + 参数冻结 + 阶段关闭）+ git commit ✅ **已完成（`S09_decision_log.md`）** | agent |
 
 Step 1 与 Step 2 各自以 commit 收口：v5 属合约代际变更（全局 request hash 语义），与 Eval/运行器代码分开提交，任一步出问题可独立回滚而不牵连另一边。
 
@@ -145,6 +146,8 @@ tmux new-session -d -s s09_bench \
 新程序 docstring 必须含 example launch command（沿 build_dataset.py 风格）。
 
 ## 5. Gate 清单（Step 5）
+
+> **判定结果（2026-10-05）：8/8 PASS**——逐 gate 证据见 `S09_decision_log.md` §3.2；全量 run 记录 gate 3（resume 幂等生产抽查）未触发不阻塞（全量一次成型，`anchors_done_before=0`）。
 
 1. **一一对应**：predictions 与 test anchor manifest 逐 token 对应（5,468，零缺失零重复），且逐条 request_hash_1f 重算值 == **v5-face manifest**（`data/dataset_v4/anchor_policy_manifest.json`）存储值——证明推理用的正是冻结请求。原 v3-face 版已归档（`runs/S08_gt_backfill/anchor_policy_manifest_v3face_frozen.json`），不作为本 gate 基准（§1）。
 2. **可复算**：固定脚本由 predictions.jsonl 重跑 Eval，报告与正式报告逐字节一致（指标层确定性；生成层不要求逐字节复现，见 §8）。

@@ -54,9 +54,49 @@ PYTHONPATH=DriveAlign/src python -m drivealign.cli.base_benchmark \
 - **yield↔action 强耦合但属同源先验**：yield=true 的 4,524 帧中 99.8% 配 DECELERATE/STOP，yield=false 中 77.2% 配 KEEP_SPEED——内部一致性极高，但结合上两条，这是"恒开谨慎模式"的两个出口，而非"感知→风险→动作"推理链；
 - **结论**：感知是装饰性的——模型读图（critical_objects 100% 随图变，见反事实记录）、每帧报风险，但动作决策绕过感知内容由先验驱动。反事实（action 83–85% 不随图变）与主跑内部一致性两条独立证据链互证。SFT 核心任务即把 action 从"先验恒开"变为"由感知条件化"；S12 可复查探针：risk_factors 是否仍饱和、自报风险帧的 action 分布是否分化、action_flip 是否上升。
 
+## Step 5 正式评测（eval_v1，2026-10-05）
+
+评测命令（agent sandbox 执行；评测纯 CPU，无需 GPU）：
+
+```bash
+source /root/miniconda3/etc/profile.d/conda.sh && conda activate autovla_codeclean && \
+cd /root/autodl-tmp/drivealign_workspace && \
+PYTHONPATH=DriveAlign/src python -m drivealign.cli.evaluate \
+  --predictions runs/S09_base_benchmark/predictions_full.jsonl \
+  --anchor-manifest data/dataset_v4/anchor_policy_manifest.json \
+  --dataset-root data/dataset_v4 \
+  --config DriveAlign/configs/evaluation/eval_v1.yaml \
+  --out runs/S09_base_benchmark/eval_v1 \
+  --counterfactual-blank runs/S09_base_benchmark/predictions_cf_blank.jsonl \
+  --counterfactual-shuffled runs/S09_base_benchmark/predictions_cf_shuffled.jsonl
+```
+
+- 产物：`runs/S09_base_benchmark/eval_v1/{eval_report.json,eval_report.md,anchor_scores.jsonl}`；
+- 溯源 meta：`eval_version=eval_v1`、`config_status=frozen`、`config_sha256=e6690f6f…91f2d`（冻结登记值）、`contract_version=v5`、`anchor_manifest_sha256=fd0d4dc4…`（v5-face manifest）。
+
+### 主指标（point estimate + scene-cluster 95% CI，B=2000 / seed=20261003 / 150 scenes）
+
+| 指标键 | point | 95% CI |
+|---|---|---|
+| `parse_rate` | 0.9965 | [0.9929, 0.9987] |
+| `object_f1_micro@0.5` | **0.338** | [0.315, 0.362]（P=0.417 / R=0.285） |
+| `object_f1_macro@0.5` | 0.217 | [0.188, 0.244]（10 类计入） |
+| `motion_state_accuracy` | 0.326 | [0.274, 0.377] |
+| `speed_action_f1_macro` | 0.115 | [0.103, 0.125] |
+| `yield_required_f1` | 0.281 | [0.236, 0.325]（TP=769 / FP=3,755 / FN=177） |
+| `risk_factors_f1_macro` | 0.089 | [0.072, 0.106] |
+| `overconservative_yield_rate` | **0.834** | [0.804, 0.862]（FP=3,755 / GT false=4,503） |
+| `overconservative_stop_rate` | 0.0006 | [0.0000, 0.0015]（FP=2） |
+| `max_items_hit_rate` | 0.0250 | [0.0168, 0.0344] |
+
+- 匹配细节：matched pairs = 5,228（@0.5），matched IoU p50 = 0.746 / p90 = 0.855——**定位质量尚可，错在枚举语义**（motion/action/yield 全线低分）；τ ∈ {0.3, 0.5, 0.7} 全报（micro F1 = 0.372 / 0.338 / 0.236）；
+- 核心结论与预判一致：**83.4% 过度让行率**是 Base 先验画像的正式量化，S12 SFT 的主要收益空间；逐指标对比须用 paired-delta bootstrap（同 anchor 同 scene 配对，evaluator 已落 `anchor_scores.jsonl`）；
+- 反事实块：blank flip 29/197 = 14.72%、shuffled 34/195 = 17.44%、output_change 100%——与反事实记录手算值逐值一致（分母口径修复见决策台账 #10）；
+- 成本摘要：gpu_hours = 8.38、latency p50 = 4.98 s / p90 = 7.87 s、throughput = 0.181 anchors/s、峰值显存 7.94 GiB、`input_tokens_p50` = 2,335（承载规划原 `visual_tokens_p50` 键，裁定见决策台账 #9）。
+
 ## 验收 gates（进入 Step 5 的前提）
 
 1. 行数与 token 集合与 test manifest 逐一对应（无缺无多）——**PASS**（missing=0/extra=0）；
 2. 单样本失败未中止批处理——**PASS**（generation_failure = 0；19 条 parse 失败均降级记录且批处理继续）；
-3. `--resume` 重跑末尾 10 token 无新增行（幂等性抽查）——**待办**：需 GPU 重载模型，合并到下次任何 resume 运行时顺带核验（观察 `anchors_done_before`/`anchors_new` 计数即可），不阻塞 Step 5。
+3. `--resume` 重跑末尾 10 token 无新增行（幂等性抽查）——**未触发（不阻塞）**：全量跑一次成型（`anchors_done_before=0`），生产未发生中断续跑，幂等路径未被行使；留作未来任何 resume 运行（如 S12 复算）的顺带抽查项。
 
