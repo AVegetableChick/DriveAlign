@@ -1204,6 +1204,8 @@ raw_text 原文：
 
 ## 判读备注
 
-- 截断型失败（13 例）的共性：先堆叠 8–9 个 critical_objects（成功输出对象数均值 2.3）再进入冗长 reasoning——Base 贪心解码的退化输出模式，其中至少 1 例 objects=9 已违反 maxItems=8，即使不截断也会被 schema 拒绝；max_new_tokens=512 覆盖成功分布 p99.5+（p50=164 / p90=266），不构成预算不足的证据，保持冻结值不动；
-- 非截断失败共 6 例（output_tokens 115–475），为真正的枚举/字段/语义范围错误，与 token 预算无关；
+- **截断型失败（13 例，output_tokens=512，JSON 未闭合）逐例断点分类**：7 例断在 reasoning 字符串中间（`Unterminated string`）；6 例断在尾部结构字段附近、距闭合仅数个 token——最短的 `6bfd42cf…` 断在 `"speed_action": "DECELER` 枚举值中间（差 2 个 token），`06be0e3b…` 断在 `"yield_required": true` 之后（但它堆了 9 个对象，完成也会被 maxItems=8 拒绝）。机制上确为 max_new_tokens=512 预算截断；
+- 截断的共性根因仍是退化冗长输出：先堆叠 8 个 critical_objects（成功输出均值 2.3）再进入长 reasoning。另有 1 例 `6a2b60e5…` 恰在 512 token 处完美闭合解析成功，属预算边界的幸运拟合——压在边界上的实际是 14 条；
+- **处置裁定**：max_new_tokens=512 保持冻结值不动——预注册纪律（跑完 test 后不回头调参）；失败量级 0.24% 不动任何指标；"能解析"不等于"值得解析"（这些输出本身对象堆叠、质量低劣）。提额至 768 作为明确建议留给未来配置代际；S12 SFT 后模型受格式监督，截断率预期自然下降，若仍高再评估；
+- **非截断失败共 6 例**（output_tokens 115–475），均为完成生成后的真实格式/枚举/语义错误，与 token 预算无关；其中 `88a6b5e35eb4…`（475 token）完整闭合后 EOS，失败原因是 bbox 值后输出了 JS 风格行内注释 `// Assuming this is a barrier based on the context`——JSON 不允许注释，是 Base 试图内联解释的有趣行为样本；
 - 全部 19 例由批处理降级记录、未中止运行（generation_failure = 0）；Step 5 评测按 parse_ok 分母排除本目录所列 anchors，`parse_error_counts` 键逐类落报告。
