@@ -47,6 +47,13 @@ PYTHONPATH=DriveAlign/src python -m drivealign.cli.base_benchmark \
 - 对象数/帧 mean = 2.30，max_items 触顶率 2.50%。
 - 解读：Base 极度保守（近全减速 + 82.9% 让行 + 零加速），`overconservative_*` 两个代理指标预计读数很高——这正是 S09 要建立的基线参照，方向符合"未对齐 Base"预期，留待 Step 5 正式报告量化。
 
+### 感知-动作解耦的行为学证据（2026-10-05 补充，主跑内部一致性分析）
+
+- **risk_factors 字段饱和**：5,449 帧 parse_ok 输出**全部**至少报一个风险因子（"无任何风险"组为空集）——该字段在 Base 输出中零区分度，"报风险"是格式默认而非判断；
+- **自报风险不改变动作**：模型自报行人/走廊冲突风险的帧（1,765 帧）中 action 分布 88.9% DECELERATE / 10.9% KEEP_SPEED，与全体（86.7% / 13.1%）几乎无差——模型自己输出的"危险"不影响它自己的动作；
+- **yield↔action 强耦合但属同源先验**：yield=true 的 4,524 帧中 99.8% 配 DECELERATE/STOP，yield=false 中 77.2% 配 KEEP_SPEED——内部一致性极高，但结合上两条，这是"恒开谨慎模式"的两个出口，而非"感知→风险→动作"推理链；
+- **结论**：感知是装饰性的——模型读图（critical_objects 100% 随图变，见反事实记录）、每帧报风险，但动作决策绕过感知内容由先验驱动。反事实（action 83–85% 不随图变）与主跑内部一致性两条独立证据链互证。SFT 核心任务即把 action 从"先验恒开"变为"由感知条件化"；S12 可复查探针：risk_factors 是否仍饱和、自报风险帧的 action 分布是否分化、action_flip 是否上升。
+
 ## 验收 gates（进入 Step 5 的前提）
 
 1. 行数与 token 集合与 test manifest 逐一对应（无缺无多）——**PASS**（missing=0/extra=0）；
