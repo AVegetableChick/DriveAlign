@@ -239,3 +239,31 @@ class TestRunEvaluation:
         assert report["visual_dependence_action_flip_blank"] == pytest.approx(1.0)
         assert report["visual_dependence_output_change_blank"] == pytest.approx(1.0)
         assert report["counterfactual"]["blank"]["n_compared"] == 1
+
+    def test_counterfactual_parse_failed_pair_excluded(self, tmp_path):
+        dataset_root, manifest_path, predictions_path, config_path = build_world(tmp_path)
+        counterfactual = tmp_path / "predictions_blank.jsonl"
+        flipped = output((0, 0, 10, 10), risks=[], yield_required=False, speed_action="ACCELERATE")
+        rows = [
+            # tok_a: both sides parse-ok -> compared; action flips KEEP_SPEED->ACCELERATE.
+            {"sample_token": "tok_a", "parse_ok": True, "status": "ok", "errors": [],
+             "telemetry": None, "output": flipped},
+            # tok_c: counterfactual side failed to parse -> pair excluded from
+            # both numerator and denominator (metric spec section 2.7).
+            {"sample_token": "tok_c", "parse_ok": False, "status": "schema_failure",
+             "errors": [{"category": "schema_failure"}], "telemetry": None, "output": None},
+        ]
+        counterfactual.write_text(
+            "".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8"
+        )
+        report = run_evaluation(
+            predictions_path, manifest_path, dataset_root, config_path, tmp_path / "out",
+            counterfactual_paths={"blank": counterfactual},
+        )
+        block = report["counterfactual"]["blank"]
+        assert block["n_shared"] == 2
+        assert block["n_compared"] == 1
+        # Denominator is n_compared (=1), not n_shared (=2): with tok_a the
+        # only compared pair and it flipped, the rate must be 1.0.
+        assert report["visual_dependence_action_flip_blank"] == pytest.approx(1.0)
+        assert report["visual_dependence_output_change_blank"] == pytest.approx(1.0)

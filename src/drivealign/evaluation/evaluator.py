@@ -223,24 +223,32 @@ def counterfactual_comparison(
     main_predictions: Mapping[str, Mapping[str, Any]],
     counterfactual_predictions: Mapping[str, Mapping[str, Any]],
 ) -> dict[str, Any]:
-    """Visual-dependence diagnostics over the anchors present in both files."""
+    """Visual-dependence diagnostics over the anchors present in both files.
+
+    Per the frozen metric spec (S09_metric_spec.md section 2.7), rates are
+    defined over parse-ok pairs only: ``n_compared`` counts pairs where both
+    sides parsed, and both denominators are ``n_compared``. ``n_shared``
+    records the raw intersection size for traceability.
+    """
     shared = sorted(set(main_predictions) & set(counterfactual_predictions))
-    flips = output_changes = 0
+    flips = output_changes = n_valid = 0
     for token in shared:
         main = main_predictions[token]
         other = counterfactual_predictions[token]
-        main_ok = bool(main.get("parse_ok")) and main.get("output") is not None
-        other_ok = bool(other.get("parse_ok")) and other.get("output") is not None
+        main_ok = bool(main.get("parse_ok"))
+        other_ok = bool(other.get("parse_ok"))
         if not (main_ok and other_ok):
             continue  # flips are defined on parse-ok pairs only
+        n_valid += 1
         if main["output"]["speed_action"] != other["output"]["speed_action"]:
             flips += 1
         if main["output"] != other["output"]:
             output_changes += 1
     return {
-        "n_compared": len(shared),
-        "action_flip_rate": flips / len(shared) if shared else 0.0,
-        "output_change_rate": output_changes / len(shared) if shared else 0.0,
+        "n_shared": len(shared),
+        "n_compared": n_valid,
+        "action_flip_rate": flips / n_valid if n_valid else 0.0,
+        "output_change_rate": output_changes / n_valid if n_valid else 0.0,
     }
 
 
