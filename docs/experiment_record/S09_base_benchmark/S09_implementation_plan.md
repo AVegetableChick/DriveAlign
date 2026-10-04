@@ -123,7 +123,7 @@ Step 1 与 Step 2 各自以 commit 收口：v5 属合约代际变更（全局 re
 |---|---|---|
 | `configs/benchmark/base_1f.yaml` | `1aab7db306b17f3688587e5d6006a98bb6a3fcc16326c26b8c8a2066d1332cb4` | frozen，Step 4 将以此运行 |
 | `configs/benchmark/base_4f.yaml` | `793db1beee23f26b4dfc7ad92f425ae7c34e2908133b92156b51bdb5812d5e90` | **仅预注册，S09 全程不运行**（gate 4；Stage 10 起才可执行） |
-| `configs/evaluation/eval_v1.yaml` | `8bc0f419adb1d9b56b43a718a8676420be59c7659d06ea8c3e6e199b0e0347eb` | provisional；2026-10-03 eval 族更名（`m09_version`→`eval_version`）致 hash 变更并重新登记；Step 5 冻结（provisional→frozen）后**须再次登记 hash**，正式报告以冻结版 hash 为准 |
+| `configs/evaluation/eval_v1.yaml` | `e6690f6fe950a1d1accdae3286dadbf6a1fad6cb503e3b8fe04ff22bbcf91f2d` | **frozen（2026-10-05，S09 Step 5 冻结，正式报告以此 hash 为准）**；沿革：provisional 期两版 hash——初版 `e9312af9…`（m09_v1.yaml 时代）、更名版 `8bc0f419…47eb`（eval 族更名致 `m09_version`→`eval_version`）；冻结仅翻 status 与头注释，指标口径零变更 |
 
 Step 2 新增代码：`evaluation/{matching,metrics,bootstrap,evaluator}.py`、`cli/{base_benchmark,evaluate}.py`、单测 5 个文件（matching 13 / metrics 16 / bootstrap 8 / evaluator 5 / runner 9）。全量单测 250 passed（含既有 193 条全绿）。
 

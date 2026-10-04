@@ -1,7 +1,7 @@
 # S09 Eval v1 指标口径汇总（Metric Spec）
 
-> 状态：**draft**，随 Step 5（eval_v1.yaml 冻结）同步转 frozen；本文档是 Eval v1 的权威指标口径参考。
-> 代码绑定：`src/drivealign/evaluation/{matching,metrics,bootstrap,evaluator}.py`、`cli/evaluate.py`、`configs/evaluation/eval_v1.yaml`（sha256 `8bc0f419adb1d9b56b43a718a8676420be59c7659d06ea8c3e6e199b0e0347eb`，provisional，冻结后重新登记）。
+> 状态：**frozen**（2026-10-05 随 eval_v1.yaml 冻结同步转 frozen）；本文档是 Eval v1 的权威指标口径参考。
+> 代码绑定：`src/drivealign/evaluation/{matching,metrics,bootstrap,evaluator}.py`、`cli/evaluate.py`、`configs/evaluation/eval_v1.yaml`（冻结版 sha256 `e6690f6fe950a1d1accdae3286dadbf6a1fad6cb503e3b8fe04ff22bbcf91f2d`，2026-10-05 登记）。
 > 与规划的关系：`S09_implementation_plan.md` §3 是摘要表；本文档逐键展开定义、分母与手算示例，两者键名一一对应。命名裁定（2026-10-03）：原 "M09 族" 更名 eval 族，见规划 §2.2。
 > 命名约定：所有报告键名遵循 `<字段>_<统计量>[_<聚合>]`，IoU 阈值以 `@τ` 内嵌（如 `object_f1_micro@0.5`）；键名与实现一一对应，冻结后不可变更，新增指标走 eval_v2（§4）。
 
@@ -241,4 +241,4 @@ CI 度量的问题：**若换一批同等规模、同等构建规则的场景集
 - [ ] §2.0 示例数值与 `test_eval_metrics.py` 断言逐值一致；
 - [ ] §3.4 bootstrap 覆盖键与 `evaluator.subset_statistics` 返回键逐键一致；
 - [ ] 二次评测逐字节一致（§4.5）；
-- [ ] 冻结后本文档 status → frozen，与 eval_v1.yaml 同步。
+- [x] 冻结后本文档 status → frozen，与 eval_v1.yaml 同步（2026-10-05 完成）。
