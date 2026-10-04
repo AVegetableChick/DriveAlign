@@ -67,7 +67,8 @@ PYTHONPATH=DriveAlign/src python -m drivealign.cli.base_benchmark \
 - [x] 定性观察：
   - **output_change = 100%** 由 critical_objects 字段机械驱动——图内容被摧毁后对象输出必然与真实场景输出不同，该键的诊断力弱，**action_flip 才是主读数**；
   - **action_flip ≈ 15–17%**：图像内容摧毁后仍有约 1/6 帧的 speed_action 翻转——Base **确实使用了图像**（非纯文本先验"背答案"），但 83–85% 的动作在无图信息下不变，动作主要由文本先验（available_speed）+ 模型先验驱动。两变换读数接近（14.7% vs 17.4%，shuffled 略高）符合预期（blank 摧毁更彻底但 Base 对二者的依赖差异不大）；
-  - 此读数为 **S12 退化参照基线**：SFT 后 `visual_dependence_action_flip_*` 若显著跌向 0（模型学会贴标签先验、更不看图）即触发 gate 关注。
+  - 此读数为 **S12 退化参照基线**：SFT 后 `visual_dependence_action_flip_*` 若显著跌向 0（模型学会贴标签先验、更不看图）即触发 gate 关注；高于 15–17% 则是动作更多由图像驱动的旁证；
+  - **两条解读边界**（防误读）：① "flip 低 = 没用图"不成立——critical_objects 100% 随图变化证明感知通道在工作，断开的是感知→动作链路（动作由 available_speed 文本 + 先验决定）；② Base 动作分布极端偏斜（86.7% DECELERATE）会稀释 flip，15–17% 只能作下界解读；若 S12 出现"结构化指标涨但 flip 跌"，结合 overconservative 率审归因（学捷径 vs 学看图）。
 
 ## 验收 gates
 
