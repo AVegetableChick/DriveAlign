@@ -1202,11 +1202,60 @@ raw_text 原文：
 ````
 
 
-## 判读备注
+## 错误分析（按错误原因）
 
-- **截断型失败（13 例，output_tokens=512，JSON 未闭合）逐例断点分类**：7 例断在 reasoning 字符串中间（`Unterminated string`）；6 例断在尾部结构字段附近、距闭合仅数个 token——最短的 `6bfd42cf…` 断在 `"speed_action": "DECELER` 枚举值中间（差 2 个 token），`06be0e3b…` 断在 `"yield_required": true` 之后（但它堆了 9 个对象，完成也会被 maxItems=8 拒绝）。机制上确为 max_new_tokens=512 预算截断；
-- 截断的共性根因仍是退化冗长输出：先堆叠 8 个 critical_objects（成功输出均值 2.3）再进入长 reasoning。另有 1 例 `6a2b60e5…` 恰在 512 token 处完美闭合解析成功，属预算边界的幸运拟合——压在边界上的实际是 14 条；
-- **处置裁定**：max_new_tokens=512 保持冻结值不动——预注册纪律（跑完 test 后不回头调参）；失败量级 0.24% 不动任何指标；"能解析"不等于"值得解析"（这些输出本身对象堆叠、质量低劣）。提额至 768 作为明确建议留给未来配置代际；S12 SFT 后模型受格式监督，截断率预期自然下降，若仍高再评估；
-- **非截断失败共 6 例**（output_tokens 115–475），均为完成生成后的真实格式/枚举/语义错误，与 token 预算无关；其中 `88a6b5e35eb4…`（475 token）完整闭合后 EOS，失败原因是 bbox 值后输出了 JS 风格行内注释 `// Assuming this is a barrier based on the context`——JSON 不允许注释，是 Base 试图内联解释的有趣行为样本；
-- **对象重复验证（2026-10-04 用户假设，数据核实）**：13 条截断案例分三类——2 条明确重复循环（`06be0e3b…` 同一 car 框逐字重复 9 次、21 对 IoU=1.00；`7fafcee5…` 同一像素框重复 4 次且换 4 个类别标签）、3 条轻度重叠（maxIoU 0.52–0.79）、9 条完全无重叠（8 个互异对象，纯"对象堆叠+话痨"）。对照：成功输出 10,980 对象中 IoU≥0.8 重复对 64 个（31 帧，0.57%），失败帧重复密度高约 40 倍但全部来自上述 2 帧。结论：截断根因是通用退化，重复循环是其极端形态；一对一贪心匹配自动惩罚两类行为（重复预测计 FP、"同框换标"因跨类别禁配计 FP+FN），无需专门处理；
-- 全部 19 例由批处理降级记录、未中止运行（generation_failure = 0）；Step 5 评测按 parse_ok 分母排除本目录所列 anchors，`parse_error_counts` 键逐类落报告。
+19 例 parse 失败共归为五类原因，逐类给出机制说明与真实输出示例（示例均为 raw_text 原文摘录，格式保持原样）。
+
+### 原因一：max_new_tokens=512 预算截断 —— 13 例（json_parse_failure @ 512）
+
+JSON 未闭合即触顶：7 例断在 reasoning 字符串中间（`Unterminated string`），6 例断在尾部结构字段附近、距闭合仅数个 token。共性根因是退化冗长输出——先堆叠 8 个 critical_objects（成功输出均值 2.3）再进入长 reasoning；其中 `06be0e3b…` 堆了 9 个对象，即使完成也会被 maxItems=8 拒绝。另有 1 例 `6a2b60e5…` 恰在 512 处完美闭合解析成功（预算边界的幸运拟合，压在边界上的实际是 14 条）。
+
+**处置裁定**：max_new_tokens=512 保持冻结值不动——预注册纪律（跑完 test 后不回头调参）；失败量级 0.24% 不动任何指标；"能解析"不等于"值得解析"。提额至 768 留给未来配置代际；S12 SFT 后截断率预期自然下降，若仍高再评估。
+
+示例（`6bfd42cf…`，原文末尾，断在枚举值中间、差 2 个 token 闭合）：
+
+```text
+  "yield_required": true,
+  "speed_action": "DECELER
+```
+
+### 原因二：JSON 非法行内注释 —— 1 例（`88a6b5e35eb4…`，475 tok）
+
+完整闭合后 EOS 停止，但 Base 在 bbox 值后写了一条 JS 风格注释——JSON 不允许注释，解析器直接拒绝。与 token 预算无关，是模型试图内联解释的有趣行为样本。
+
+```text
+"bbox_2d": [1398, 522, 1538, 644], // Assuming this is a barrier based on the context
+```
+
+### 原因三：类别词写入 risk_factors 枚举 —— 3 例（`01cf…` / `7c21…` / `d04c…`，115–116 tok）
+
+同一模式复现三次：把类别名 `construction_vehicle` 当作风险因子写进 `risk_factors`（类别→风险字段混淆），三例的对象均为 construction_vehicle + `motion_state: oncoming`。
+
+```text
+"critical_objects": [ { "category": "construction_vehicle", "bbox_2d": [530, 461, 748, 894], "motion_state": "oncoming" } ],
+"risk_factors": [ "construction_vehicle" ]
+```
+
+### 原因四：缺 motion_state 且重复 bbox_2d 键 —— 1 例（`3f6ce131…`，130 tok）
+
+单个对象里写了两条 `bbox_2d`（像是想给一个物体两个框）并因此丢了必填的 `motion_state`，schema 以 required property 缺失拒绝。
+
+```text
+{ "category": "traffic_cone", "bbox_2d": [617, 496, 644, 550], "bbox_2d": [638, 496, 656, 537] }
+```
+
+### 原因五：bbox 角点逆序 —— 1 例（`a572dd2e…`，309 tok）
+
+`bbox_2d` 违反 x1<x2 的语义范围约束（x1=526 > x2=523），`semantic_range_failure`。
+
+```text
+{ "category": "pedestrian", "bbox_2d": [526, 410, 523, 417], "motion_state": "crossing" }
+```
+
+### 对象重复的交叉验证（2026-10-04 用户假设，数据核实）
+
+13 条截断案例的对象重叠检测：2 条明确重复循环（`06be0e3b…` 同一 car 框逐字重复 9 次、21 对 IoU=1.00；`7fafcee5…` 同一像素框重复 4 次且换 4 个类别标签）、3 条轻度重叠（maxIoU 0.52–0.79）、9 条完全无重叠。对照：成功输出 10,980 对象中 IoU≥0.8 重复对 64 个（31 帧，0.57%），失败帧重复密度高约 40 倍但全部来自上述 2 帧。结论：重复循环是退化输出的极端形态而非截断的普遍直接原因；一对一贪心匹配自动惩罚两类行为（重复预测计 FP、"同框换标"因跨类别禁配计 FP+FN），无需专门处理。
+
+### 评测侧处理
+
+全部 19 例由批处理降级记录、未中止运行（generation_failure = 0）；Step 5 评测按 parse_ok 分母排除本目录所列 anchors，`parse_error_counts` 键逐类落报告。
