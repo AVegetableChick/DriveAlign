@@ -1,0 +1,78 @@
+# S11 计算 Smoke - 1F SFT 冻结运行配置（`configs/sft/sft_smoke_1f.yaml`）
+#
+# 本配置在 Step 1 完成后冻结（状态置 frozen + 登记 sha256）。这一步之前是
+# “提案值”（§7 待拍板清单已清零），冻结后才允许跑 Step 3 训练。
+#
+# 冻结要旨（§2.2 / §7-C/G/H）：
+#   - 模型面：contract v6、policy=1F、DUMP 序列化配置、seed=0（全部钉死）。
+#   - 目标构造：四字段显式列举 + separators=(", ", ": ")，确保监督文本确定性。
+#   - LoRA 起点：r=16/alpha=32/dropout=0.05/target=全注意力+MLP/AdamW+cosine。
+#   - overfit 阶段独立参数覆盖见“overfit”段（dropout=0 覆盖起步值，§7-G）。
+
+status: frozen        # draft -> frozen（Step 1 完成后置 frozen 并登记 sha；冻结后允许跑 Step 3）
+run_name: sft_smoke_1f
+contract_version: v6          # 训练面 == 评测面（§2.3）
+input_policy: 1F
+seed: 0              # §7-H：写死固定值，避免逐环境随机性破坏可复现性
+
+# 目标序列化配置（§2.2）：必须与 src/drivealign/sft/targets.py 的 DUMP 一致。
+target_dump:
+  ensure_ascii: false
+  separators: [", ", ": "]   # json.dumps 的 separators 需要 (item,key) 二元组
+
+# 模型（沿用既有推理栈的 same root checkpoint）
+model:
+  path: /root/autodl-tmp/drivealign_workspace/models/Qwen2.5-VL-3B-Instruct
+  revision: null
+  dtype: bfloat16
+  device_map: auto
+  attn_implementation: flash_attention_2
+  processor:
+    use_fast: true
+
+runtime:
+  local_files_only: true
+
+# 样本选取规则（§4）：train32 = 2 epoch；overfit128 = 3 epoch（§7-F）。
+selection:
+  train32: 32
+  overfit128: 128
+  stratify_on: [location, time_of_day]   # 分层键，字典序选取
+  quota: {STOP: 4, yield_true: 4}        # 每类下限样本数（并集下限）
+
+# LoRA 起点参数（§7-C）
+lora:
+  r: 16
+  alpha: 32
+  dropout: 0.05
+  target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+
+# 优化与调度（§7-C 补充）
+training:
+  per_device_train_batch_size: 1
+  gradient_accumulation_steps: 4
+  learning_rate: 1.0e-4
+  optimizer: adamw_torch
+  lr_scheduler_type: cosine
+  warmup_ratio: 0.05
+  weight_decay: 0.01
+  max_grad_norm: 1.0
+  gradient_checkpointing: true
+
+# overfit 阶段覆盖（§7-F/G）：dropout=0 覆盖起步值，epochs=3。
+overfit:
+  lora:
+    dropout: 0
+  training:
+    num_train_epochs: 3
+
+# train32（链路验证）阶段（§7-F）：2 epoch。
+train32:
+  training:
+    num_train_epochs: 2
+
+# 解码（沿 S09 冻结口径，仅自推理诊断用）
+generation:
+  do_sample: false
+  temperature: 0.0
+  max_new_tokens: 512
