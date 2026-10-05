@@ -32,7 +32,7 @@
 
 ## 2. Step 0.2：v6-face anchor manifest + parity（CPU，紧随 0.1）
 
-1. **重建（已完成，2026-10-05）**：以 v6 面运行 [dataset/manifest.py](/root/autodl-tmp/drivealign_workspace/DriveAlign/src/drivealign/dataset/manifest.py)（沿 S09 先例派生进 runs/，不覆盖 `data/dataset_v4/` 下任何文件）：输出 `runs/S11_sft_smoke/face_v6/anchor_policy_manifest.json`（路径可执行时微调）。前提：DEFAULT 已切 v6（manifest 按当前面 stamp）。**产物**：`cv=v6, n=30940`（train 22941 / val 2531 / test 5468），sha256 = `2abe8c4feb43067e294f6af743efcc01e72729aacb94f92764d0f349c239acd1`；`manifest_assets/` 以符号链接 staging dataset_v4 shards + dataset_v1 scene manifests（S09 先例同构）。
+1. **重建（已完成，2026-10-05）**：以 v6 面运行 [dataset/manifest.py](/root/autodl-tmp/drivealign_workspace/DriveAlign/src/drivealign/dataset/manifest.py)（沿 S09 先例派生，不覆盖 `data/dataset_v4/` 下任何文件）：输出至 `runs/S11_sft_smoke/face_v6/anchor_policy_manifest.json`，**已归位 T2 层 `data/face_manifests/v6/`**（2026-10-05 迁移）。前提：DEFAULT 已切 v6（manifest 按当前面 stamp）。**产物**：`cv=v6, n=30940`（train 22941 / val 2531 / test 5468），sha256 = `2abe8c4feb43067e294f6af743efcc01e72729aacb94f92764d0f349c239acd1`；`manifest_assets/` 以符号链接 staging dataset_v4 shards + dataset_v1 scene manifests（S09 先例同构）。
 2. **Parity 检查（已完成，25/25 PASS）**：①逐锚点 `request_hash_1f` 重算 == manifest v6 值；②抽查 25 锚点做 v5→v6 request 文本 diff，**唯一差异 = prompt 段 reasoning 相关行**，user 面图像/速度行零漂移；③image relpath 25/25 解析（存在性 + 可读）。
 3. **确定性（已完成，BYTE-IDENTICAL True）**：manifest 重建两次逐字节一致（`determinism_run2/` 与 `face_v6/` sha 均 `2abe8c4f…`；比对后临时目录已删）。
 
@@ -44,7 +44,7 @@
 conda activate autovla_codeclean
 # 主评测（eval 全锚集）
 python -m drivealign.cli.base_benchmark \
-  --anchor-manifest runs/S11_sft_smoke/face_v6/anchor_policy_manifest.json \
+  --anchor-manifest data/face_manifests/v6/anchor_policy_manifest.json \
   --output-dir runs/S09_base_benchmark/eval_v6 | tee runs/S09_base_benchmark/eval_v6/main.log
 # 反事实两组（与 v5 电池同构）
 python -m drivealign.cli.base_benchmark --anchor-manifest <同上> \

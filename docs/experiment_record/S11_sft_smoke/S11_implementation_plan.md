@@ -17,7 +17,7 @@ git commit -m "[Docs] S11 plan v2 (v6 face transition + simplified SFT targets)"
 ## 1. 现状基线（v6 生效后口径）
 
 - **数据与 GT 已冻结（S08）**：`data/dataset_v4`（contract v4 记录）零改动。SFT 训练目标 = record 内 `training_targets.expected_output` 的**四字段子集**（critical_objects、risk_factors、yield_required、speed_action）；`reasoning` 字段留作 GT provenance，训练侧不再消费。迭代入口 `data/dataset_v4/anchor_policy_manifest.json`（token → split/shard/line/record_hash/request_hash/anchor_image_relpath）。
-- **模型面（Step 0 交付后）**：contract v6——4 字段 schema + v6 prompt（删 reasoning 指令），`DEFAULT_CONTRACT_VERSION="v6"`；Base 链 `serialize(ONE_FRAME)` → `generate_one`（`apply_chat_template(user=[image, prompt], add_generation_prompt=True)`，无 system）→ 严格解析；解码冻结 greedy、max_new_tokens=512。v6-face manifest 位于 `runs/S11_sft_smoke/face_v6/`。
+- **模型面（Step 0 交付后）**：contract v6——4 字段 schema + v6 prompt（删 reasoning 指令），`DEFAULT_CONTRACT_VERSION="v6"`；Base 链 `serialize(ONE_FRAME)` → `generate_one`（`apply_chat_template(user=[image, prompt], add_generation_prompt=True)`，无 system）→ 严格解析；解码冻结 greedy、max_new_tokens=512。v6-face manifest 位于 `data/face_manifests/v6/`（T2 层，可复用派生视图，不属于任何实验）。
 - **Base 基准（Step 0.3 交付后）**：`runs/S09_base_benchmark/eval_v6/` 为 S12 对比基准；S09 存档读数（v5 面）继续有效但**不得**与 SFT-v6 读数直接对比（双面标注规则）。
 - **eval 栈**：eval_v1 指标定义不变（面引用升级至 v6，sha 重登记）；S11 自推理诊断复用 `parse_structured_output` 与错误 taxonomy。
 - **Base checkpoint**：`models/Qwen2.5-VL-3B-Instruct`。
@@ -55,7 +55,7 @@ labels     = [-100] * len(ids_prefix) + ids_target + [IM_END_ID]   # 四字段�
 
 ### 2.3 模型面 parity（训练面 == 评测面）
 
-`ids_prefix` 由与 [inference/base_runner.py](/root/autodl-tmp/drivealign_workspace/DriveAlign/src/drivealign/inference/base_runner.py) 完全相同的路径产生：同一 `apply_chat_template`、同一 `process_vision_info`、prompt 来自 `serialize(model_inputs, InputPolicy.ONE_FRAME)`（v6 面）。逐样本断言：SFT 样本 user 面文本与重算 `request_hash_1f` == `runs/S11_sft_smoke/face_v6/anchor_policy_manifest.json` 值（S08 parity 纪律）。train/eval 唯一差异 = assistant 目标段存在。
+`ids_prefix` 由与 [inference/base_runner.py](/root/autodl-tmp/drivealign_workspace/DriveAlign/src/drivealign/inference/base_runner.py) 完全相同的路径产生：同一 `apply_chat_template`、同一 `process_vision_info`、prompt 来自 `serialize(model_inputs, InputPolicy.ONE_FRAME)`（v6 面）。逐样本断言：SFT 样本 user 面文本与重算 `request_hash_1f` == `data/face_manifests/v6/anchor_policy_manifest.json` 值（S08 parity 纪律）。train/eval 唯一差异 = assistant 目标段存在。
 
 ### 2.4 训练技术路线（起点，§7 待拍板确认）
 
@@ -92,8 +92,22 @@ v1 预判的两大风险（JSON 安全、长度截断）在四字段全监督 + 
 
 ### Step 2：样本冻结 artifact（32 + 128，CPU）
 
-- 选取规则见 §4（待拍板后冻结进 config）；产物 + sha256 登记进本目录文档。
-- 逐样本完整性复验（GT 已冻结，只验读取与 hash 一致）。
+采用 **A/B 分层**（2026-10-05 拍板，见决策记录）：
+
+- **A）token 选取**（**可复用**，跨 contract 复用，只选一次）：`data/` 下可复用目录
+  （默认 `sft_subsets/`）落 `train32_tokens.json` / `overfit128_tokens.json` +
+  `sft_subsets_manifest.json`（选取参数 + sha + git commit）。它与模型 face 无关，
+  换 contract 时**不重新选取**。
+- **B）序列化样本**（**面绑定**，换 face 必须重打）：`runs/S11_sft_smoke/sft_samples/`
+  落 `train32.jsonl` / `overfit128.jsonl` + `samples_manifest.json`。按当前 face
+  的 anchor manifest 重打 prompt/target/request_hash。
+
+- 落位原则：A 属可复用派生资产（非实验专属），B 属绑定 face + git commit 的实验
+  artifact（实验专属）。**均不进 `data/dataset_v4/`**（那是 S08 冻结基座层，保持
+  不可变不变式）。
+- CLI：`cli/sft_build_samples.py` 拆成 `select`（A）与 `serialize`（B）两子命令。
+- 逐样本面 parity 由 `dataset.build_training_sample` 在序列化时断言（GT 已冻结，
+  只验读取与 hash 一致）。
 
 ### Step 3：1F 32 条 train/save/reload（GPU，Step 0.3 释放后）
 
