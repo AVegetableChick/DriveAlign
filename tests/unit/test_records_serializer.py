@@ -110,15 +110,15 @@ def test_1f_and_4f_prompts_identical():
 
 
 def test_request_stamps_model_face_version():
-    """S09: v5 owns its model face; the v4->v3 lineage pin stays frozen."""
+    """S11: v6 owns its model face; the v4->v3 lineage pin stays frozen."""
     from drivealign.contracts.versions import (
         DEFAULT_CONTRACT_VERSION,
         model_face_version,
     )
 
-    assert DEFAULT_CONTRACT_VERSION == "v5"  # prompt aligned to 7-item schema (S09)
+    assert DEFAULT_CONTRACT_VERSION == "v6"  # S11: prompt stops teaching reasoning
     req = serialize(_model_inputs(), InputPolicy.ONE_FRAME)
-    assert req.contract_version == model_face_version("v5") == "v5"
+    assert req.contract_version == model_face_version("v6") == "v6"
     # Frozen lineage history (S08 gate 1): v4 kept the v3 model face verbatim.
     assert model_face_version("v4") == "v3"
 

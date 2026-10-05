@@ -1,0 +1,43 @@
+{
+  "version": "v3",
+  "schema_ref": "v3/output_schema.json#/properties/risk_factors",
+  "description": "Closed risk taxonomy. Design constraint: every canonical term must be deterministically derivable from future physical evidence available to the M09 oracle (future ego corridor, future occupancy of other agents, minimum future distance, map geometry). This closes the v1 gap where risk_factors had derived ground truth but no direct scoring path. The parser normalizes synonyms before validation; unmapped terms are recorded in ParseResult.unmapped_terms and reported as semantic_range_failure.",
+  "unmapped_policy": "record_and_fail",
+  "terms": [
+    {
+      "canonical": "pedestrian_crossing",
+      "synonyms": ["jaywalking", "pedestrian on road", "person crossing", "pedestrian in path", "pedestrian crossing"],
+      "gt_derivation": "future pedestrian trajectory intersects the ego corridor"
+    },
+    {
+      "canonical": "vehicle_merging",
+      "synonyms": ["cut in", "cut-in", "cutin", "merging car", "merging vehicle", "lane change into ego lane", "vehicle cutting in"],
+      "gt_derivation": "adjacent-lane vehicle future trajectory enters the ego corridor (cut-in)"
+    },
+    {
+      "canonical": "lead_vehicle_braking",
+      "synonyms": ["car ahead braking", "lead decelerating", "braking vehicle ahead", "leading car slowing down"],
+      "gt_derivation": "lead vehicle future speed decreases below current ego speed while in ego corridor"
+    },
+    {
+      "canonical": "corridor_conflict",
+      "synonyms": ["object in path", "obstacle in path", "path intrusion", "conflict point", "occupancy conflict"],
+      "gt_derivation": "any future occupancy (vehicle, bicycle, pedestrian) intersects the ego corridor"
+    },
+    {
+      "canonical": "stationary_obstacle",
+      "synonyms": ["parked car in lane", "obstacle ahead", "stalled vehicle", "debris on road", "stopped vehicle in path"],
+      "gt_derivation": "static object inside or adjacent to the ego corridor with zero future velocity"
+    },
+    {
+      "canonical": "congestion",
+      "synonyms": ["traffic jam", "heavy traffic", "queued traffic", "stop and go", "dense traffic ahead"],
+      "gt_derivation": "low lead speed with multiple vehicles queued ahead in the ego corridor"
+    },
+    {
+      "canonical": "oncoming_traffic",
+      "synonyms": ["oncoming car", "opposing traffic", "vehicle in opposite lane", "oncoming lane traffic"],
+      "gt_derivation": "oncoming vehicle within interaction range in the opposing lane relative to ego future path"
+    }
+  ]
+}

@@ -123,9 +123,9 @@ def test_build_split_writes_gt_filled_shards(tmp_path):
         expected = record_dict["training_targets"]["expected_output"]
         assert isinstance(expected, dict) and len(expected) == 5
         # provenance carries the record-side contract version; the builder
-        # stamps DEFAULT_CONTRACT_VERSION at build time (v5 since S09; the
+        # stamps DEFAULT_CONTRACT_VERSION at build time (v6 since S11; the
         # frozen dataset_v4 assets keep their v4 provenance)...
-        assert record_dict["provenance"]["contract_version"] == "v5"
+        assert record_dict["provenance"]["contract_version"] == "v6"
 
     per_split = {
         "train": {

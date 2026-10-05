@@ -26,6 +26,16 @@ Purpose:
       from the frozen v3/v4-face history; dataset assets are NOT rebuilt
       (records' GT/model_inputs are prompt-independent) and S09 derives a
       v5-face anchor manifest into runs/ instead.
+    - v6: v5 eight artifacts copied verbatim except ``prompt.txt`` (the
+      ``reasoning`` field entry is removed) and ``output_schema.json`` (the
+      ``reasoning`` property is dropped from both required and properties,
+      so a reasoning key is rejected as an extra property). v6 owns its
+      model face (``MODEL_FACE_LINEAGE["v6"] == "v6"``), so v6 request
+      hashes differ from the v5 face; the prompt stops teaching reasoning
+      (S11 model-face ruling). reasoning_templates.json is retained as a
+      record-side GT provenance asset only; the model face no longer
+      consumes it. dataset_v4 records are NOT rebuilt and v5 archives stay
+      valid; S11 derives a v6-face anchor manifest into runs/ instead.
 """
 
 from functools import lru_cache
@@ -34,11 +44,11 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[3]
 CONTRACTS_DIR = REPO_ROOT / "configs" / "contracts"
 
-AVAILABLE_CONTRACT_VERSIONS = ("v1", "v2", "v3", "v4", "v5")
+AVAILABLE_CONTRACT_VERSIONS = ("v1", "v2", "v3", "v4", "v5", "v6")
 
-#: Current frozen pairing (v5 model face: prompt aligned to the 7-item risk
-#: schema; GT-side assets byte-identical to v4).
-DEFAULT_CONTRACT_VERSION = "v5"
+#: Current frozen pairing (v6 model face: prompt/schema stop teaching
+#: reasoning; GT-side assets byte-identical to v5).
+DEFAULT_CONTRACT_VERSION = "v6"
 
 #: Model-face lineage: which contract version's model face each version
 #: inherits for REQUEST purposes. The request hash covers the prompt text
@@ -54,6 +64,8 @@ DEFAULT_CONTRACT_VERSION = "v5"
 #: benchmark/training requests carry the ``v5`` stamp. The frozen v3/v4-face
 #: history remains valid for dataset audits; never compare request hashes
 #: across face eras.
+#: v6 drops reasoning from the prompt/schema, which also enters the request
+#: hash, so v6 owns its model face and S11 requests carry the ``v6`` stamp.
 #: Every new contract version MUST add an entry here; a test pins the
 #: byte-identity of the hash-relevant artifacts.
 MODEL_FACE_LINEAGE = {
@@ -62,6 +74,7 @@ MODEL_FACE_LINEAGE = {
     "v3": "v3",
     "v4": "v3",
     "v5": "v5",
+    "v6": "v6",
 }
 
 #: The five model-face artifact files (prompt + parse/validate layer).

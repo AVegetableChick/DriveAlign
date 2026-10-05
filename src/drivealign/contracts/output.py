@@ -125,20 +125,26 @@ class StructuredDrivingOutput:
 
     critical_objects: tuple[CriticalObject, ...]
     risk_factors: tuple[str, ...]
-    reasoning: str
     yield_required: bool
     speed_action: str
     contract_version: str
+    reasoning: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        """Return the schema-shaped dict without the injected version tag."""
-        return {
+        """Return the schema-shaped dict without the injected version tag.
+
+        ``reasoning`` is emitted only when the parsing contract version
+        carries it (v6 dropped the field from the generation schema).
+        """
+        payload: dict[str, Any] = {
             "critical_objects": [item.to_dict() for item in self.critical_objects],
             "risk_factors": list(self.risk_factors),
-            "reasoning": self.reasoning,
             "yield_required": self.yield_required,
             "speed_action": self.speed_action,
         }
+        if self.reasoning is not None:
+            payload["reasoning"] = self.reasoning
+        return payload
 
 
 @dataclass(frozen=True)
@@ -489,10 +495,10 @@ def parse_structured_output(
             for item in payload["critical_objects"]
         ),
         risk_factors=tuple(payload["risk_factors"]),
-        reasoning=payload["reasoning"],
         yield_required=payload["yield_required"],
         speed_action=payload["speed_action"],
         contract_version=version,
+        reasoning=payload.get("reasoning"),
     )
 
     semantic = tuple(_semantic_errors(output, image_size))

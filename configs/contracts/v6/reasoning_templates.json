@@ -1,0 +1,44 @@
+{
+  "version": "v4",
+  "description": "P4 reasoning templates (decision ledger S08_pre_implementation_decisions.md section 3). Three segments (perception / risk / decision), 3-5 wording variants each; the variant is selected deterministically by hash(sample_token + segment salt) so the same input always renders byte-identical text. Variants only change wording, never information: object categories come from critical_objects, risk phrases come from enum_phrase_map.json verbatim, decision wording comes from the speed_action/yield phrases. English only, no distance/speed numbers, zero traffic-light mentions (P4.4). Placeholders: {objects} = comma list of '{article} {motion_phrase} {category}' items, {risks} = comma list of fixed risk phrases, {speed_action} / {yield_phrase} = fixed phrases from enum_phrase_map.json.",
+  "segments": {
+    "perception": {
+      "salt": "perception",
+      "variants": [
+        "Ahead of me, I see {objects}.",
+        "In front of me, I can see {objects}.",
+        "Looking ahead, I observe {objects}.",
+        "The scene ahead contains {objects}."
+      ],
+      "empty_variants": [
+        "Ahead of me, I cannot see any objects.",
+        "There are no objects visible in front of me.",
+        "I do not observe any objects ahead.",
+        "Nothing notable is visible ahead of me."
+      ]
+    },
+    "risk": {
+      "salt": "risk",
+      "variants": [
+        "The main risks are: {risks}.",
+        "I identify the following risks: {risks}.",
+        "Potential hazards include: {risks}.",
+        "The situation involves these risks: {risks}."
+      ],
+      "empty_variants": [
+        "There are no immediate risks.",
+        "I do not identify any immediate risks.",
+        "No obvious hazards are present.",
+        "The situation appears free of immediate risks."
+      ]
+    },
+    "decision": {
+      "salt": "decision",
+      "variants": [
+        "Therefore, I will {speed_action}; {yield_phrase}.",
+        "Given this, my action is to {speed_action}, and {yield_phrase}.",
+        "Accordingly, I should {speed_action}; {yield_phrase}."
+      ]
+    }
+  }
+}

@@ -61,7 +61,7 @@ def make_record(token: str, scene: str) -> dict:
             ]
         },
         "provenance": {
-            "contract_version": "v5",
+            "contract_version": "v6",
             "temporal_policy_version": "window-v1",
             "builder_commit": "0" * 40,
             "nuscenes_version": "v1.0-trainval",
@@ -111,13 +111,13 @@ class TestBuildBenchmarkRequest:
         entry = manifest["anchors"]["tok"]
         request, model_request = build_benchmark_request(
             record, entry, dataroot=tmp_path / "nuscenes",
-            policy=InputPolicy.ONE_FRAME, contract_version="v5",
+            policy=InputPolicy.ONE_FRAME, contract_version="v6",
         )
         assert request.image == image_path
         assert request.available_speed == (
             "5.200 m/s (backward difference from the previous keyframe)"
         )
-        assert request.contract_version == "v5"
+        assert request.contract_version == "v6"
         # 1F: only the anchor (newest) frame is exposed.
         assert list(model_request.frame_tokens) == ["tok_f3"]
         assert model_request.image_relpaths == (
@@ -129,7 +129,7 @@ class TestBuildBenchmarkRequest:
         tmp_path, record, manifest, _ = world
         _, model_request = build_benchmark_request(
             record, manifest["anchors"]["tok"], dataroot=tmp_path / "nuscenes",
-            policy=InputPolicy.ONE_FRAME, contract_version="v5",
+            policy=InputPolicy.ONE_FRAME, contract_version="v6",
         )
         assert model_request.canonical_hash() == manifest["anchors"]["tok"]["request_hash_1f"]
 
@@ -137,7 +137,7 @@ class TestBuildBenchmarkRequest:
         tmp_path, record, manifest, _ = world
         _, model_request = build_benchmark_request(
             record, manifest["anchors"]["tok"], dataroot=tmp_path / "nuscenes",
-            policy=InputPolicy.ONE_FRAME, contract_version="v5",
+            policy=InputPolicy.ONE_FRAME, contract_version="v6",
         )
         fingerprints = future_fingerprints(record)
         hits = scan_future_fingerprints(
@@ -152,7 +152,7 @@ class TestBuildBenchmarkRequest:
         with pytest.raises(ValueError, match="request hash mismatch"):
             build_benchmark_request(
                 record, broken["anchors"]["tok"], dataroot=tmp_path / "nuscenes",
-                policy=InputPolicy.ONE_FRAME, contract_version="v5",
+                policy=InputPolicy.ONE_FRAME, contract_version="v6",
             )
 
     def test_counterfactual_transform_creates_scratch_image(self, world):
@@ -161,7 +161,7 @@ class TestBuildBenchmarkRequest:
         for transform in ("blank", "shuffled"):
             request, _ = build_benchmark_request(
                 record, manifest["anchors"]["tok"], dataroot=tmp_path / "nuscenes",
-                policy=InputPolicy.ONE_FRAME, contract_version="v5",
+                policy=InputPolicy.ONE_FRAME, contract_version="v6",
                 transform=transform, scratch_dir=scratch,
             )
             assert request.image.is_file()

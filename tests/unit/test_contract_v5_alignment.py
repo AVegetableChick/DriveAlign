@@ -32,7 +32,6 @@ import re
 from drivealign.contracts.prompt import build_structured_prompt
 from drivealign.contracts.versions import (
     AVAILABLE_CONTRACT_VERSIONS,
-    DEFAULT_CONTRACT_VERSION,
     MODEL_FACE_FILES,
     contract_file,
     model_face_version,
@@ -117,16 +116,18 @@ def test_v4_assets_stay_frozen():
 
 
 def test_v5_registry_and_face():
-    assert AVAILABLE_CONTRACT_VERSIONS[-2:] == ("v4", "v5")
-    assert DEFAULT_CONTRACT_VERSION == "v5"
+    assert AVAILABLE_CONTRACT_VERSIONS[-3:] == ("v4", "v5", "v6")
+    assert AVAILABLE_CONTRACT_VERSIONS[-1] == "v6"
     assert model_face_version("v5") == "v5"
     assert model_face_version("v4") == "v3"
     for name in MODEL_FACE_FILES:
         assert contract_file("v5", name).is_file()
 
 
-def test_runtime_default_resolves_to_v5_face():
+def test_runtime_default_resolves_to_v6_face():
+    """The S11 default prompt is the 4-field v6 text (no reasoning)."""
     frozen = build_structured_prompt()
+    assert "reasoning" not in frozen
     assert "small_following_gap" not in frozen
     assert _risk_items(frozen) == V5_RISK_TERMS
     model_inputs = ModelInputs(
@@ -138,5 +139,5 @@ def test_runtime_default_resolves_to_v5_face():
         ego_speed_mps=5.2,
     )
     request = serialize(model_inputs, InputPolicy.ONE_FRAME)
-    assert request.contract_version == "v5"
+    assert request.contract_version == "v6"
     assert request.prompt.endswith(frozen)

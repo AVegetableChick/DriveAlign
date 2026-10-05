@@ -37,7 +37,6 @@ VALID_SAMPLE = {
         }
     ],
     "risk_factors": [],
-    "reasoning": "Car ahead is moving; keep speed and monitor.",
     "yield_required": False,
     "speed_action": "KEEP_SPEED",
 }
@@ -180,9 +179,9 @@ def test_fenced_output_is_extracted_with_flag():
 
 
 @pytest.mark.usefixtures("stub_generate")
-def test_default_record_carries_contract_v5():
+def test_default_record_carries_contract_v6():
     record = run_structured_inference(None, SampleRequest("ok-1", "img_ok.jpg"))
-    assert record.contract_version == "v5"  # S09: prompt aligned to 7-item schema
+    assert record.contract_version == "v6"  # S11: prompt stops teaching reasoning
 
 
 @pytest.mark.usefixtures("stub_generate")

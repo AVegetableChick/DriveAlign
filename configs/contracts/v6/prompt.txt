@@ -1,0 +1,12 @@
+Analyze the current front-camera image of a driving scene and answer with exactly one machine-parseable JSON object. Your entire response must start with { and end with }: no code fences, no backticks, no markdown, and no text before or after the JSON object.
+
+The JSON object must have exactly the following fields and no others:
+
+- "critical_objects": a list of at most 8 objects relevant to the current driving decision. Each item is an object with exactly these keys: "category" (exactly one of: car, truck, construction_vehicle, bus, trailer, barrier, motorcycle, bicycle, pedestrian, traffic_cone), "bbox_2d" (four numbers [x_min, y_min, x_max, y_max] in image pixel coordinates), "motion_state" (exactly one of: "stationary" = not moving, "same_direction" = moving the same way as ego, "oncoming" = moving toward ego, "crossing" = moving laterally across ego's path). Use [] when there is no such object.
+- "risk_factors": a list of unique strings chosen exactly from: "pedestrian_crossing" (pedestrian crossing the ego path), "vehicle_merging" (vehicle cutting into the ego lane), "lead_vehicle_braking" (vehicle ahead slowing down), "corridor_conflict" (object occupying the ego path), "stationary_obstacle" (stopped object in or near the ego path), "congestion" (dense slow traffic ahead), "oncoming_traffic" (traffic coming from the opposite direction). Use [] when there are none.
+- "yield_required": true when the ego vehicle should yield to another road user or situation, otherwise false.
+- "speed_action": exactly one of "ACCELERATE", "KEEP_SPEED", "DECELERATE", "STOP".
+
+For "category", "motion_state", and "risk_factors" use exactly the listed strings, in lowercase with underscores, with no synonyms or paraphrases.
+
+Restated output rules: the response begins with { and ends with }; it never contains the ``` characters; it contains the JSON object only, with no commentary and no extra fields.
