@@ -8,6 +8,7 @@
 #   - 目标构造：四字段显式列举 + separators=(", ", ": ")，确保监督文本确定性。
 #   - LoRA 起点：r=16/alpha=32/dropout=0.05/target=全注意力+MLP/AdamW+cosine。
 #   - overfit 阶段独立参数覆盖见“overfit”段（dropout=0 覆盖起步值，§7-G）。
+#   - 视觉输入：max_pixels=360000（输入分辨率减半，见 S11_training_acceleration.md A1）。
 
 status: frozen        # draft -> frozen（Step 1 完成后置 frozen 并登记 sha；冻结后允许跑 Step 3）
 run_name: sft_smoke_1f
@@ -29,6 +30,11 @@ model:
   attn_implementation: flash_attention_2
   processor:
     use_fast: true
+    # A1 训练加速（见 S11_training_acceleration.md）：输入分辨率减半。
+    # max_pixels 触发图像处理器 smart_resize 在**原图**上重采样（patch_size=14 不变）；
+    # 1600×900 → 784×448，patch 7296→1792，visual token 1824→448，序列 2384→约 1008。
+    # 评测侧 re-baseline 必须写入同一值，保证 train/eval 同口径。
+    max_pixels: 360000
 
 runtime:
   local_files_only: true
@@ -45,9 +51,24 @@ lora:
   r: 16
   alpha: 32
   dropout: 0.05
-  target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+  # target_modules = **仅语言解码层**，用「路径限定正则字符串」表达，不能用裸后缀列表。
+  #
+  # 为什么不能用列表（见 S11_bug_log B7，静默缺陷）：
+  #   peft 对 **list** 的匹配是 `key in list` 或 `key.endswith(f".{name}")`
+  #   （peft/tuners/tuners_utils.py: check_target_module_exists）。裸后缀 `gate_proj`
+  #   会同时命中视觉塔里同名的 `visual.blocks.*.mlp.{gate,up,down}_proj`——LoRA 悄悄
+  #   训上了 ViT 的 MLP（696 张量而非 504），不报错、loss 正常下降，事后数张量才发现。
+  #
+  # 为什么字符串可行：peft 对 **str** 走 `re.fullmatch(pattern, key)`
+  #   （peft/utils/other.py: match_target_against_key），即对整个模块全路径做全匹配，
+  #   因此把范围钉死在 `model.layers.<n>.` 之下，`visual.` 开头的路径永不入选。
+  target_modules: 'model\.layers\.\d+\.(self_attn\.(q_proj|k_proj|v_proj|o_proj)|mlp\.(gate_proj|up_proj|down_proj))'
 
 # 优化与调度（§7-C 补充）
+# batch/accum = 1/4（有效 batch 4、16 optimizer step）。2026-10-06 实测 A/B：bs=2+accum=2
+# 虽同样 16 step，但 runtime 90.35s -> 108.08s（吞吐 -16%）、峰值 reserved 15.08 -> 19.01 GiB，
+# 说明 bs=1 已不处于 batch 饥饿区，加大 batch 无速度收益反而吃掉分辨率口径的显存余量；
+# 故维持 1/4。
 training:
   per_device_train_batch_size: 1
   gradient_accumulation_steps: 4

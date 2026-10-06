@@ -245,3 +245,43 @@ def encode_chat(
         "im_end_id": im_end_id,
         "target_text": target_text,
     }
+
+
+def load_frozen_records(samples_path: str | Path) -> list[dict[str, Any]]:
+    """读冻结样本 JSONL（train32/overfit128）→ 记录 dict 列表（跳过空行）。
+
+    训练与 G1 复验都从这里取样本，保证"同一份冻结 artifact"这一前提。
+    """
+    lines = Path(samples_path).read_text(encoding="utf-8").splitlines()
+    return [json.loads(line) for line in lines if line.strip()]
+
+
+def encode_frozen_sample(
+    processor: Any,
+    record: Mapping[str, Any],
+    dataroot: str | Path,
+) -> dict[str, Any]:
+    """把一条**冻结样本 JSONL 记录**编码成 HF Dataset 的一行。
+
+    Step 2 冻结的 `train32.jsonl` / `overfit128.jsonl` 每行含 prompt/image_relpath/
+    target_text 与面 parity 追踪字段。本函数用真实图像路径（`dataroot/relpath`）调
+    `encode_chat` 得到张量，并带上追踪字段（sample_token/sample_sha256），供训练
+    （`cli/sft_train`）与 G1 复验（`cli/sft_reload_verify`）**共用同一条编码路径**。
+
+    为什么抽成公共函数：G1 软层要求"固定输入"与训练时逐位一致；若两个 CLI 各写一份
+    编码逻辑，任何一处漂移都会让复验失去意义。此处是唯一实现。
+    """
+    encoded = encode_chat(
+        processor,
+        prompt=record["prompt"],
+        image_path=Path(dataroot) / record["image_relpath"],
+        target_text=record["target_text"],
+    )
+    return {
+        "input_ids": encoded["input_ids"],
+        "labels": encoded["labels"],
+        "pixel_values": encoded["pixel_values"],
+        "image_grid_thw": encoded["image_grid_thw"],
+        "sample_token": record["sample_token"],
+        "sample_sha256": record["sample_sha256"],
+    }

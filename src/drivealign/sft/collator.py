@@ -57,8 +57,12 @@ def collate_fn(batch: Sequence[Mapping[str, Any]], pad_token_id: int) -> dict[st
     dict
         - `input_ids`、`labels`、`attention_mask`：文本侧 (B, max_len) tensor。
         - `pixel_values`：所有样本图像的 patch 拼接后的整体 tensor。
-        - `image_grid_thw`：按样本/图堆叠后的 (N_images, 4) 长整 tensor。
-        - `seq_len_max`（辅助字段，供 logger 看 batch 文本长度分布）。
+        - `image_grid_thw`：按样本/图堆叠后的 (N_images, 3) 长整 tensor。
+
+    注意：返回 dict 的 key 必须**全部**是模型 forward 能接收的入参。HF Trainer 在
+    `remove_unused_columns=False` 下会把 collator 输出整份透传给 `model(**inputs)`，
+    任何多余 key 都会触发 `forward() got an unexpected keyword argument`。此前的
+    `seq_len_max`（logging 辅助字段）就是因此导致训练首个 step 崩溃，已移除。
     """
     # --- 文本侧：分别垫 input_ids 与 labels，并据此生成 attention_mask ---
     input_ids_raw = [b["input_ids"] for b in batch]
@@ -69,11 +73,15 @@ def collate_fn(batch: Sequence[Mapping[str, Any]], pad_token_id: int) -> dict[st
     attention_mask_t = (input_ids_t != pad_token_id).long()
 
     # --- 视觉侧：拼接所有图像的 pixel_values，堆叠全部 image_grid_thw ---
-    pixel_list = [b["pixel_values"] for b in batch]  # 每个可能含多张图
+    # HF DataLoader 交付 batch 时会对元素做隐式转换（tensor -> list / numpy）。
+    # 这里统一用 torch.as_tensor 复位为 tensor，避免 torch.cat 首元素是 list 报错
+    # （S11 Step 3 实测：encoder 单样本 pixel_values 已是 "(patch, 1176)" 无批维张量，
+    #  但经 DataLoader 后变 list）。
+    pixel_list = [torch.as_tensor(b["pixel_values"]) for b in batch if b["pixel_values"] is not None]
     # 沿 patch 首维拼接：每张图在内维度再叠，最终一张大 tensor。
-    pixel_values = torch.cat([p for p in pixel_list if p is not None], dim=0)
-    grid_list = [b["image_grid_thw"] for b in batch]
-    image_grid_thw = torch.cat([g for g in grid_list if g is not None], dim=0)
+    pixel_values = torch.cat(pixel_list, dim=0) if pixel_list else torch.zeros(0)
+    grid_list = [torch.as_tensor(b["image_grid_thw"]) for b in batch if b["image_grid_thw"] is not None]
+    image_grid_thw = torch.cat(grid_list, dim=0) if grid_list else torch.zeros(0)
 
     return {
         "input_ids": input_ids_t,
@@ -81,7 +89,6 @@ def collate_fn(batch: Sequence[Mapping[str, Any]], pad_token_id: int) -> dict[st
         "attention_mask": attention_mask_t,
         "pixel_values": pixel_values,
         "image_grid_thw": image_grid_thw,
-        "seq_len_max": max(len(b["input_ids"]) for b in batch),
     }
 
 
