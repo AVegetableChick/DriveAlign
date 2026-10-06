@@ -160,8 +160,10 @@ git commit -m "[Docs] S12 implementation plan (formal single-frame SFT)"
 ### Step 2：样本冻结（CPU，确定性）
 
 - **train_full**：A 层 = train split 全量 token 列表（字典序）；B 层 = 按 v6 face 重打 `train_full.jsonl`（逐样本 `request_hash_1f` parity 由 `build_training_sample` 断言，不等即抛 `ValueError`）。落 `runs/S12_sft_1f/sft_samples/`。
+  - 落位：A 层进 `data/sft_subsets/`（与 S11 同一"可复用、跨 contract"位）；B 层进 `runs/S12_sft_1f/sft_samples/`。
+  - 命令：`serialize` 必须带 `--subsets train_full`。`select` 固定写出 train32/overfit128/train_full 三份 token 列表，而 `serialize` 缺省会把目录内**实际存在**的全部重打，不带该参数会让 S12 冻结目录混入 S11 的两份 smoke 子集（详见 §6「施工期补充登记」）。
 - **反事实子集**：**沿用** `runs/S09_base_benchmark/counterfactual_subset.txt`（200 锚，与 Base 同构，保 paired 可比），不重新抽样。
-- 逐样本 sha + manifest sha + git commit 登记。
+- 逐样本 sha + manifest sha + git commit 登记（`runs/S12_sft_1f/reports/step2_freeze.json`）。
 
 ### Step 3：全量训练（GPU，用户 tmux）
 
@@ -222,7 +224,7 @@ git commit -m "[Docs] S12 implementation plan (formal single-frame SFT)"
 |---|---|---|
 | `configs/sft/sft_1f.yaml` | `configs/sft/` | sha256 → 决策台账 |
 | `configs/benchmark/sft_1f_v6.yaml` | `configs/benchmark/` | sha256 → 决策台账 |
-| train_full 样本 + manifest | `runs/S12_sft_1f/sft_samples/` | 逐样本 sha + manifest sha |
+| train_full 样本 + manifest | `runs/S12_sft_1f/sft_samples/` | 逐样本 sha + manifest sha（冻结记录 `runs/S12_sft_1f/reports/step2_freeze.json`） |
 | 候选 ckpt / best adapter | `runs/S12_sft_1f/checkpoints/`（不进 git） | 大小 + sha |
 | test predictions / 反事实 / eval 报告 / paired-delta | `runs/S12_sft_1f/` | sha + 运行记录回填 |
 | 资源与成本报告 | `runs/S12_sft_1f/reports/` | 回填 `S12_run.md` |
@@ -241,6 +243,11 @@ git commit -m "[Docs] S12 implementation plan (formal single-frame SFT)"
 - **I.（已拍板 2026-10-07）** G4 达标定义 = **`parse_rate` 达标 + P/Q 至少一个 paired-delta CI 下界 > 0**（不要求 P 与 Q 同时改善）。（§4 G4）
 
 > **J.（已关闭 2026-10-07）** 不启用 sweep 重选 best——本阶段确定以末点作为 test checkpoint。**无遗留事项**：若未来阶段要改用 sweep，属新阶段的新决策，不由 S12 承接。（§2.3）
+
+> **施工期补充登记（2026-10-07，Step 2 施工期，不改任何已拍板值与口径）**
+> - `cli/sft_build_samples.py serialize` 新增**可选** `--subsets`（缺省 `None` = S11 原行为逐字不变；`cli/sft_closeout.py disk` 以 `argparse.Namespace` 复用 `cmd_serialize`，无该字段时自动退化）。
+> - **原因**：`select` 固定写出 train32/overfit128/train_full 三份 token 列表，而 `serialize` 缺省会处理目录内**实际存在**的全部 → S12 冻结样本目录会混入 S11 的两份 smoke 子集。S12 Step 2 以 `--subsets train_full` 收敛产出，使冻结目录严格等于 §5 登记的 `train_full` 一份。
+> - **性质**：§3 Step 1 文件表的**机制补充**（新增一个可选入参 + 单测 `tests/unit/test_sft_build_samples.py`），不涉及阈值、口径、判据，不改变任何 Gate 定义。
 
 ## 7. 交接（S13）
 

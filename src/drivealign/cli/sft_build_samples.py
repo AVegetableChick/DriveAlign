@@ -30,8 +30,8 @@ B 落位：`runs/S11_sft_smoke/sft_samples/`（绑定 face + git commit 的实�
 S12（§3 Step 2）在同一 A/B 分层上追加 **train_full**：A 层 = train split 全量
 token 列表（字典序，`train_full_tokens.json`），B 层 = `train_full.jsonl`
 （22,941 行，逐样本 `request_hash_1f` parity 由 `build_training_sample` 断言）。
-serialize 只处理 subsets_dir 下**实际存在**的 token 列表，因此 S12 可只用
-train_full。
+由于 `select` 固定写出三个子集，S12 的 `serialize` 用 `--subsets train_full`
+把产出收敛到正式训练集一份（缺省不带该参数时行为与 S11 完全一致）。
 
 确定性
 ------
@@ -74,6 +74,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p_ser.add_argument("--anchor-manifest", required=True, help="current-face anchor manifest")
     p_ser.add_argument("--subsets-dir", required=True, help="dir of token subset files")
     p_ser.add_argument("--out-dir", required=True, help="output dir for JSONL+manifest")
+    p_ser.add_argument(
+        "--subsets",
+        nargs="+",
+        default=None,
+        help=(
+            "restrict serialization to these subset names (default: every token list "
+            "actually present in --subsets-dir, i.e. the S11 behaviour). `select` always "
+            "writes train32/overfit128/train_full, so S12 passes `--subsets train_full` to "
+            "keep its frozen samples dir free of the two S11 smoke subsets."
+        ),
+    )
 
     return parser.parse_args(argv)
 
@@ -154,9 +165,17 @@ def cmd_select(args: argparse.Namespace) -> int:
 def cmd_serialize(args: argparse.Namespace) -> int:
     """B): 读 token 列表 + 当前 face manifest，重打序列化样本。
 
-    处理的子集 = `subsets_dir` 下**实际存在**的 token 列表（train32 / overfit128 /
-    train_full）。允许只存在 train_full（S12 正式训练集），也允许 S11 的两份并存；
-    一个都不存在时报错，避免"静默产出空 artifact"。
+    处理的子集由 `--subsets` 决定：
+
+    - **缺省（None）**：处理 `subsets_dir` 下**实际存在**的 token 列表（train32 /
+      overfit128 / train_full）。这是 S11 的既有行为，一字未改（G4 复算依赖它）。
+      一个都不存在时报错，避免"静默产出空 artifact"。
+    - **显式给出**：只处理列出的子集；名字非法或对应 token 文件缺失都直接报错，
+      不静默跳过（S12 §3 Step 2 传 `--subsets train_full`，使冻结样本目录只含正式
+      训练集，不掺入 `select` 顺带写出的 S11 smoke 子集）。
+
+    注：`cli/sft_closeout.py` 的 `disk` 子命令以 `argparse.Namespace` 直接复用本函数
+    （不带 `subsets` 字段），故用 `getattr` 读取，缺字段即退化为 S11 行为。
     """
     manifest = json.loads(Path(args.anchor_manifest).read_text(encoding="utf-8"))
     subsets_dir = Path(args.subsets_dir)
@@ -167,12 +186,27 @@ def cmd_serialize(args: argparse.Namespace) -> int:
     anchors = manifest["anchors"]
 
     known = ("train32", "overfit128", "train_full")
-    present = [name for name in known if (subsets_dir / f"{name}_tokens.json").is_file()]
-    if not present:
-        raise FileNotFoundError(
-            f"no token subset files found in {subsets_dir} (looked for {known}); "
-            "run the `select` subcommand first"
-        )
+    requested = getattr(args, "subsets", None)
+    if requested:
+        unknown = [name for name in requested if name not in known]
+        if unknown:
+            raise ValueError(f"unknown subset name(s): {unknown}; known = {list(known)}")
+        missing = [
+            name for name in requested if not (subsets_dir / f"{name}_tokens.json").is_file()
+        ]
+        if missing:
+            raise FileNotFoundError(
+                f"requested token subset file(s) not found in {subsets_dir}: "
+                f"{[f'{name}_tokens.json' for name in missing]}"
+            )
+        present = list(requested)
+    else:
+        present = [name for name in known if (subsets_dir / f"{name}_tokens.json").is_file()]
+        if not present:
+            raise FileNotFoundError(
+                f"no token subset files found in {subsets_dir} (looked for {known}); "
+                "run the `select` subcommand first"
+            )
 
     artifacts = {}
     for name in present:
