@@ -1,0 +1,46 @@
+# S12 Step 6 - SFT-1F 的 v6 面 test 推理配置（`configs/benchmark/sft_1f_v6.yaml`）
+#
+# 来源：逐字段复制 `configs/benchmark/base_1f_v6.yaml`（S11 Step 0.3 建，S09 的 v5
+# 基准面改 v6 而来），只多两处：
+#   1. `adapter_path`：Step 6 要评测的 SFT adapter 目录（`--adapter` 可运行时覆盖）；
+#   2. `model.processor.max_pixels: 360000`：与**训练侧**（`configs/sft/sft_1f.yaml`）
+#      逐值相同（A1 口径：train/eval 同分辨率，否则视觉 token 口径两端不一致）。
+#
+# ⚠️ `base_1f_v6.yaml` 本身**不动**（其 sha256 已登记，S09 v6 面读数须保持可比）。
+#
+# 冻结要旨（与 base_1f_v6 完全一致的部分）：
+#   - policy=1F、split=test、greedy 解码（do_sample=false / temperature=0.0 /
+#     max_new_tokens=512）、dtype=bfloat16、seed=0、speed_line_precision=3。
+#   - contract_version=v6。
+
+status: frozen
+run_name: sft_1f_v6
+split: test
+input_policy: 1F
+contract_version: v6
+image_transform: null
+
+# SFT adapter 目录（Step 5 冻结的 best；Step 6 可用 --adapter 覆盖）。
+adapter_path: runs/S12_sft_1f/checkpoints/sft_1f/best
+
+model:
+  path: /root/autodl-tmp/drivealign_workspace/models/Qwen2.5-VL-3B-Instruct
+  revision: null
+  dtype: bfloat16
+  device_map: auto
+  attn_implementation: flash_attention_2
+  processor:
+    use_fast: true
+    # A1：与训练侧同值（见 configs/sft/sft_1f.yaml）。
+    max_pixels: 360000
+
+runtime:
+  local_files_only: true
+
+generation:
+  do_sample: false
+  temperature: 0.0
+  max_new_tokens: 512
+
+speed_line_precision: 3
+seed: 0

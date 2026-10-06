@@ -140,18 +140,27 @@ def make_trainer(
     *,
     overfit: bool = False,
     output_dir: str | Path,
+    params_override: dict | None = None,
 ) -> Trainer:
     """组装 HF Trainer（§2.4 + §7-C 参数）。
 
     - collator：`make_data_collator`（批融合）。
-    - train 数据集：本模块不实现 IDataset；由调用方（CLI）把 JSONL 转成 HF Dataset，
+    - train 数据集：本模块不实现 IDataset；由调用方（CLI）把 JSONL 转成 Dataset，
       元素是 `dataset.encode_chat` 返回的 dict（processor 已在样本层面生成张量）。
+      S12 起 CLI 传入的是 `dataset.LazySftDataset`（map-style 惰性装载，§2.2）。
     - ``remove_unused_columns=False``：collator 收到的就是 encode_chat 的 dict，不删列。
     - ``output_dir``：HF Trainer 的中间 checkpoint 落盘目录，由调用方传 CLI 的 `--out`。
-      **不能**再用 `config["run_name"]`：那是相对路径，`save_steps=64` 一旦触发就会在
+      **不能**再用 `config["run_name"]`：那是相对路径，`save_steps` 一旦触发就会在
       当前工作目录下凭空建出 `./sft_smoke_1f/checkpoint-64`（train32 只有 16 step 所以
       从未暴露；overfit128 有 96 step 必然触发），既污染工作目录又让 checkpoint 与
       adapter 分家。
+    - ``save_steps`` / ``save_total_limit``：S12 §2.5（H 拍板）要求候选 ckpt 节奏
+      `save_steps=500` / `save_total_limit: null`（全量保留），而 S11 是硬编码的
+      64 / 2——1 epoch 全量（5,735 step）下 64 会产出 ~90 个候选、limit=2 又会把
+      早期 ckpt 删掉。改为**从 config["training"] 读、缺省沿用 S11 值**（64 / 2），
+      保证 smoke 行为逐值不变。
+    - ``params_override``：CLI 显式覆盖（`--epochs` / `--save-steps`），优先级最高，
+      用于不改冻结配置就覆盖单次运行规模。
     """
     from drivealign.sft.collator import make_data_collator
 
@@ -161,6 +170,8 @@ def make_trainer(
     # 否则阶段段只含覆盖字段会丢基础参数（见报错 KeyError per_device_train_batch_size）。
     params = dict(config["training"])
     params.update(config.get(seg, {}).get("training", {}))
+    if params_override:
+        params.update(params_override)
 
     train_args = TrainingArguments(
         output_dir=output_dir,
@@ -179,8 +190,9 @@ def make_trainer(
         seed=config["seed"],
         remove_unused_columns=False,
         save_strategy="steps",
-        save_steps=64,
-        save_total_limit=2,
+        # 缺省值 = S11 硬编码值（64 / 2），冻结配置可覆盖（S12: 500 / null）。
+        save_steps=int(params.get("save_steps", 64)),
+        save_total_limit=params.get("save_total_limit", 2),
         logging_steps=10,
         report_to=None,
     )
@@ -199,6 +211,8 @@ def train(
     output_dir: str,
     overfit: bool = False,
     loaded: LoadedModel | None = None,
+    params_override: dict | None = None,
+    resume_from_checkpoint: str | None = None,
 ):
     """加载模型/处理器 → 组装 Trainer → 训练 → 保存 adapter（G1 状态保真）。
 
@@ -206,6 +220,10 @@ def train(
     这一步是显存刚需：CLI 需要 processor 把 JSONL 编码成训练张量，若在此再
     `load_model_and_processor`，同进程就会驻留**两份 3B 基座**（≈6GB 额外显存，
     Step 3 实测 31.5/32.7GB 并触发 meta-device/offload 告警）。传入后全程单副本。
+
+    ``resume_from_checkpoint``：S12 §2.9 / Step 4 的续训入口，直接透传给
+    `Trainer.train`（HF 会从该 ckpt 目录恢复 optimizer / scheduler / RNG state /
+    global_step）。为 None 时行为与 S11 完全一致。
     """
     if loaded is None:
         loaded = load_model_and_processor(config)
@@ -219,8 +237,9 @@ def train(
         config,
         overfit=overfit,
         output_dir=output_dir,
+        params_override=params_override,
     )
-    trainer.train()
+    trainer.train(resume_from_checkpoint=resume_from_checkpoint)
     trainer.save_model(output_dir)
     return trainer
 

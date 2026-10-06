@@ -27,6 +27,12 @@ B 落位：`runs/S11_sft_smoke/sft_samples/`（绑定 face + git commit 的实�
     runs/S11_sft_smoke/sft_samples/overfit128.jsonl
     runs/S11_sft_smoke/sft_samples/samples_manifest.json
 
+S12（§3 Step 2）在同一 A/B 分层上追加 **train_full**：A 层 = train split 全量
+token 列表（字典序，`train_full_tokens.json`），B 层 = `train_full.jsonl`
+（22,941 行，逐样本 `request_hash_1f` parity 由 `build_training_sample` 断言）。
+serialize 只处理 subsets_dir 下**实际存在**的 token 列表，因此 S12 可只用
+train_full。
+
 确定性
 ------
 分层键（location × time_of_day）由 manifest 提供；每层内字典序取前 k。mancifest
@@ -84,16 +90,21 @@ def _git_commit() -> str:
 # ---------------------------------------------------------------------------
 
 
-def _select_train_anchors(manifest: Mapping[str, Any], limit: int) -> list[str]:
+def _select_train_anchors(manifest: Mapping[str, Any], limit: int | None) -> list[str]:
     """确定性选取 train split 锚点：token 字典序取前 limit。
 
     严格的分层（location × time_of_day）需 scene 级元数据，其完整实现属 Step 2
     冻结时；此处以"token 字典序 + 固定 limit"给出可复现基础版，保留分层钩子。
     满足 §4"无随机数"要求。
+
+    ``limit=None``（S12 §3 Step 2 的 `train_full`）= 取 train split **全量**，
+    仍是同一套字典序，故 S11 的 train32/overfit128 与 S12 的 train_full 是
+    同一选取律的前缀关系（前 32/128 条逐项相同）。
     """
     anchors = manifest["anchors"]
     train_tokens = [t for t, e in anchors.items() if e["split"] == "train"]
-    return sorted(train_tokens)[:limit]
+    ordered = sorted(train_tokens)
+    return ordered[:limit] if limit is not None else ordered
 
 
 def cmd_select(args: argparse.Namespace) -> int:
@@ -109,11 +120,18 @@ def cmd_select(args: argparse.Namespace) -> int:
             "stratify_on": ["location", "time_of_day"],
             "train32": args.train32,
             "overfit128": args.overfit128,
+            # S12 §3 Step 2：train split 全量（22,941），token 字典序，取全部。
+            "train_full": "all_train",
         },
         "git_commit": _git_commit(),
         "files": {},
     }
-    for name, limit in (("train32", args.train32), ("overfit128", args.overfit128)):
+    # train_full 的 limit=None 表示"全量"（S12 正式训练集）。
+    for name, limit in (
+        ("train32", args.train32),
+        ("overfit128", args.overfit128),
+        ("train_full", None),
+    ):
         tokens = _select_train_anchors(manifest, limit)
         path = subsets_dir / f"{name}_tokens.json"
         content = json.dumps(tokens, indent=2, sort_keys=True) + "\n"
@@ -134,7 +152,12 @@ def cmd_select(args: argparse.Namespace) -> int:
 
 
 def cmd_serialize(args: argparse.Namespace) -> int:
-    """B): 读 token 列表 + 当前 face manifest，重打序列化样本。"""
+    """B): 读 token 列表 + 当前 face manifest，重打序列化样本。
+
+    处理的子集 = `subsets_dir` 下**实际存在**的 token 列表（train32 / overfit128 /
+    train_full）。允许只存在 train_full（S12 正式训练集），也允许 S11 的两份并存；
+    一个都不存在时报错，避免"静默产出空 artifact"。
+    """
     manifest = json.loads(Path(args.anchor_manifest).read_text(encoding="utf-8"))
     subsets_dir = Path(args.subsets_dir)
     out_dir = Path(args.out_dir)
@@ -143,8 +166,16 @@ def cmd_serialize(args: argparse.Namespace) -> int:
     # 当前 face 的 anchor manifest：token -> entry（含 shard/line/record_hash 等）。
     anchors = manifest["anchors"]
 
+    known = ("train32", "overfit128", "train_full")
+    present = [name for name in known if (subsets_dir / f"{name}_tokens.json").is_file()]
+    if not present:
+        raise FileNotFoundError(
+            f"no token subset files found in {subsets_dir} (looked for {known}); "
+            "run the `select` subcommand first"
+        )
+
     artifacts = {}
-    for name in ("train32", "overfit128"):
+    for name in present:
         tokens = json.loads((subsets_dir / f"{name}_tokens.json").read_text(encoding="utf-8"))
         rows = []
         for token in tokens:

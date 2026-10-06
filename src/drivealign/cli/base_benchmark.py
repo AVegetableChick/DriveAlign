@@ -95,6 +95,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         choices=IMAGE_TRANSFORMS,
         help="counterfactual image mode; requires a separate --out file",
     )
+    parser.add_argument(
+        "--adapter",
+        default=None,
+        help=(
+            "optional LoRA adapter dir (S12 SFT eval): when given, the base model is "
+            "wrapped with the adapter via sft.train.load_adapter_model; unset keeps the "
+            "S09 base path byte-identical. Falls back to config['adapter_path']."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -248,7 +257,17 @@ def main(argv: list[str] | None = None) -> int:
                 if line.strip()
             }
 
-    loaded = load_model_and_processor(config)
+    # 模型装载：默认走 S09 的 base 路径（零改动）；给了 adapter（或 config 登记了
+    # adapter_path）时走 SFT 评测路径——复用 `sft.train.load_adapter_model`，即
+    # "新进程 PeftModel 重建 + eval()"，其余推理路径（serialize → generate_one →
+    # 严格解析 → resume/anchors-file/image-transform）逐行不变（S12 §2.6）。
+    adapter_dir = args.adapter or config.get("adapter_path")
+    if adapter_dir:
+        from drivealign.sft.train import load_adapter_model
+
+        loaded = load_adapter_model(config, adapter_dir)
+    else:
+        loaded = load_model_and_processor(config)
     generation_config = dict(config["generation"])
     scratch_dir = out_path.parent
     wall_start = time.monotonic()
@@ -305,6 +324,7 @@ def main(argv: list[str] | None = None) -> int:
         "config_sha256": config["_sha256"],
         "contract_version": contract_version,
         "input_policy": policy.value,
+        "adapter_path": str(adapter_dir) if adapter_dir else None,
         "image_transform": args.image_transform,
         "split": str(config["split"]),
         "anchors_selected": len(tokens),

@@ -1,0 +1,80 @@
+# S12 正式单帧 SFT 冻结运行配置（`configs/sft/sft_1f.yaml`）
+#
+# 状态：frozen（S12 Step 1 冻结；sha256 在 Step 8 登记进 S12_decision_log.md）。
+# 来源：逐字段复制 S11 的 `configs/sft/sft_smoke_1f.yaml`，只改**训练规模类**字段
+# （见下方"与 smoke 的差异"）。face / DUMP / LoRA pattern / max_pixels / 生成参数
+# **逐值不变**，由 `tests/unit/test_sft_config_parity.py` 钉住。
+#
+# 与 smoke 的差异（§2.5 / §6 B·D·H）
+# ---------------------------------
+#   1. learning_rate: 1.0e-4 -> 5.0e-5（D 拍板；1e-4 是为 32/128 条过拟合设定）
+#   2. num_train_epochs: 2/3 -> 1（B 拍板；train 全量 22,941 条 = 5,735 optimizer step）
+#   3. save_steps: 64 -> 500、save_total_limit: 2 -> null（H 拍板；候选 ckpt 全量保留，
+#      用途 = Step 4 resume 验证取中间 ckpt + 中断保险，**不用于选择 best**）
+#   4. 删除 smoke 的 `train32` / `overfit` 阶段覆盖段——S12 只有一种训练规模，
+#      直接读顶层 `training:`（否则 `train32.training.num_train_epochs: 2` 会把
+#      1 epoch 悄悄改回 2；sft_train 的 seg 缺省就是 train32）。
+#
+# 冻结要旨（§2.1 语义不变式）
+#   - 模型面：contract v6、policy=1F、DUMP 序列化配置、seed=0（全部钉死）。
+#   - LoRA：r=16/alpha=32/dropout=0.05，`target_modules` 为**路径限定正则字符串**
+#     （不能用裸后缀 list，见 S11_bug_log B7）。
+#   - 视觉输入：max_pixels=360000（A1；train 与 eval 两侧必须同值）。
+
+status: frozen
+run_name: sft_1f
+contract_version: v6          # 训练面 == 评测面（§2.3）
+input_policy: 1F
+seed: 0
+
+# 目标序列化配置（§2.2）：必须与 src/drivealign/sft/targets.py 的 DUMP 一致。
+target_dump:
+  ensure_ascii: false
+  separators: [", ", ": "]   # json.dumps 的 separators 需要 (item,key) 二元组
+
+model:
+  path: /root/autodl-tmp/drivealign_workspace/models/Qwen2.5-VL-3B-Instruct
+  revision: null
+  dtype: bfloat16
+  device_map: auto
+  attn_implementation: flash_attention_2
+  processor:
+    use_fast: true
+    # A1 训练加速：输入分辨率减半（1600×900 → 784×448，visual token 1824→448）。
+    # 评测侧（configs/benchmark/sft_1f_v6.yaml）必须同一值。
+    max_pixels: 360000
+
+runtime:
+  local_files_only: true
+
+# LoRA 起点参数（§7-C / S11 B7）
+lora:
+  r: 16
+  alpha: 32
+  dropout: 0.05
+  # 仅语言解码层，用「路径限定正则字符串」表达（peft 对 str 走 re.fullmatch，
+  # 对 list 走后缀匹配会连带命中 visual.blocks.*.mlp.*，静默训到 ViT，见 B7）。
+  target_modules: 'model\.layers\.\d+\.(self_attn\.(q_proj|k_proj|v_proj|o_proj)|mlp\.(gate_proj|up_proj|down_proj))'
+
+# 优化与调度（§7-C / §2.5）
+# batch/accum = 1/4（有效 batch 4）。2026-10-06 实测 bs=2+accum=2 无速度收益且峰值
+# reserved 15.08 -> 19.01 GiB，故维持 1/4。
+training:
+  per_device_train_batch_size: 1
+  gradient_accumulation_steps: 4
+  learning_rate: 5.0e-5
+  num_train_epochs: 1
+  optimizer: adamw_torch
+  lr_scheduler_type: cosine
+  warmup_ratio: 0.05
+  weight_decay: 0.01
+  max_grad_norm: 1.0
+  gradient_checkpointing: true
+  save_steps: 500           # ≈11 个候选 + 最终（§2.5）
+  save_total_limit: null    # 全量保留 adapter（体积小；供 Step 4 resume 验证）
+
+# 解码（沿 S09 冻结口径，仅自推理/G1 软层诊断用）
+generation:
+  do_sample: false
+  temperature: 0.0
+  max_new_tokens: 512

@@ -108,12 +108,14 @@ git commit -m "[Docs] S12 implementation plan (formal single-frame SFT)"
 
 | 守卫 | 判据（触发即退化） | 方向 |
 |---|---|---|
-| `overconservative_yield_rate` | paired-delta 95% CI **上界 < 0** | 越大越坏 |
-| `overconservative_stop_rate` | paired-delta 95% CI **上界 < 0** | 越大越坏 |
-| `visual_dependence_action_flip_blank` | paired-delta 95% CI **下界 < 0** | 越小越坏（不看图了） |
-| `visual_dependence_action_flip_shuffled` | paired-delta 95% CI **下界 < 0** | 越小越坏 |
-| `visual_dependence_output_change_*` | paired-delta 95% CI **下界 < 0** | 越小越坏 |
+| `overconservative_yield_rate` | paired-delta 95% CI **下界 > 0** | 越大越坏 |
+| `overconservative_stop_rate` | paired-delta 95% CI **下界 > 0** | 越大越坏 |
+| `visual_dependence_action_flip_blank` | paired-delta 95% CI **上界 < 0** | 越小越坏（不看图了） |
+| `visual_dependence_action_flip_shuffled` | paired-delta 95% CI **上界 < 0** | 越小越坏 |
+| `visual_dependence_output_change_*` | paired-delta 95% CI **上界 < 0** | 越小越坏 |
 | **常量预测器守卫** | SFT `speed_action` 多数类占比 ≤ 0.867 **且** `action_flip_rate` ≥ Base | 唯一保留绝对值的行 |
+
+> **口径更正（2026-10-07 原地更正，登记于 §6 决策台账 F 项）**：本表原文把两族行的 CI 侧写反了——「越大越坏」写成 `上界 < 0`、「越小越坏」写成 `下界 < 0`，照字面实现会把"显著**改善**"判成退化（例：`overconservative` 显著下降 = 不再用怂换分，却被判退化），与表头「触发即退化」及「方向」列自相矛盾。现更正为语义自洽方向，取 `delta = SFT − Base`：**越大越坏 → CI 下界 > 0**（显著变大才触发）；**越小越坏 → CI 上界 < 0**（显著变小才触发）。`cli/sft_eval_delta.py` 每行 `criterion` 字段与本表逐字一致。
 
 > **为什么常量预测器守卫不能用 CI**：它要判的是"是否只是把 Base 的常量换成了另一个常量"，这个语义 CI 表达不了（paired-delta 只能说"两系统有差异"），必须直接比多数类占比这个绝对值。它是 S11 D3 登记的必报项，也是本阶段最可能踩的坑。
 
@@ -233,6 +235,7 @@ git commit -m "[Docs] S12 implementation plan (formal single-frame SFT)"
 - **D.（已拍板 2026-10-07）** 学习率 = **`5.0e-5`**（自 S11 smoke 的 `1e-4` 下调）。理由：`1e-4` 是为 32/128 条过拟合设定；全量 22,941 × 5,735 step 下过大易行为坍缩。（§2.5）
 - **E.（已拍板 2026-10-07，不再复议）** `best := 末点 checkpoint`，只对末点跑**一次全量 val 2,531** 落单点读数。⚠️ **这是对蓝图"best checkpoint 完全由 validation 选择"的有意偏离，已登记、不复议**；候选 adapter 仍全量保留（供 Step 4 resume 验证）（§2.3 / §2.4）。
 - **F.（已拍板 2026-10-07）** §2.8 退化守卫改用 **paired-delta CI 口径**（删掉 `+0.02` / `−0.05` 等绝对容忍值）；**常量预测器守卫保留绝对值**。（§2.8）
+  - **F 更正（2026-10-07，Step 1 施工期发现并原地更正）**：§2.8 表原把两族行的 CI 侧写反（越大越坏写 `上界 < 0`、越小越坏写 `下界 < 0`），照字面会把"显著改善"判成退化。更正为语义自洽方向（`delta = SFT − Base`）：越**大**越坏 → CI **下界 > 0**；越**小**越坏 → CI **上界 < 0**。此仅为措辞纠错，**不改变 F 已拍板的口径与阈值**（仍是 CI 口径、仍只对常量预测器守卫保留绝对值）。`cli/sft_eval_delta.py` 实现与该方向一致。
 - **G.（已拍板 2026-10-07）** save/resume 判定 = **状态序列化层硬层 + 生成合法软层**，不做逐位续训复现。（§2.9）
 - **H.（已拍板 2026-10-07）** 候选 ckpt 节奏 = `save_steps=500`（≈11 候选）/ `save_total_limit: null`。（§2.5）
 - **I.（已拍板 2026-10-07）** G4 达标定义 = **`parse_rate` 达标 + P/Q 至少一个 paired-delta CI 下界 > 0**（不要求 P 与 Q 同时改善）。（§4 G4）

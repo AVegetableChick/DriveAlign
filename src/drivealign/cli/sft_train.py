@@ -54,30 +54,39 @@ def _cuda_peak_memory() -> dict[str, float] | None:
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run S11 LoRA SFT smoke")
+    parser = argparse.ArgumentParser(description="Run LoRA SFT (S11 smoke / S12 full)")
     parser.add_argument("--config", required=True, help="sft config YAML")
-    parser.add_argument("--samples", required=True, help="frozen samples JSONL (train32/overfit128)")
-    parser.add_argument("--out", required=True, help="adapter output dir")
+    parser.add_argument("--samples", required=True, help="frozen samples JSONL (train32/overfit128/train_full)")
+    parser.add_argument("--out", required=True, help="adapter output dir (checkpoint 落盘根)")
     parser.add_argument("--dataroot", required=True, help="nuScenes dataroot for images")
     parser.add_argument("--overfit", action="store_true", help="use overfit128 params")
+    # S12 §3 Step 1 新增：训练规模覆盖（不改冻结配置即可覆盖单次运行）。
+    parser.add_argument("--epochs", type=int, default=None, help="override num_train_epochs")
+    parser.add_argument(
+        "--save-steps",
+        type=int,
+        default=None,
+        help="override checkpoint 节奏（S12 正式 = 500）",
+    )
+    parser.add_argument(
+        "--resume-from-checkpoint",
+        default=None,
+        help="resume training from a checkpoint dir (S12 §2.9 / Step 4)",
+    )
     return parser.parse_args(argv)
 
 
 def _load_dataset(samples_path: Path, dataroot: Path, processor):
-    """读冻结样本 JSONL → 逐条 `encode_frozen_sample` → HF Dataset。
+    """读冻结样本 JSONL → **惰性** map-style Dataset（S12 §2.2 / §3 Step 1）。
 
-    编码逻辑（面 parity + 目标段）在 `sft.dataset.encode_frozen_sample`，与 G1 复验
-    共用同一条路径，保证"固定输入"逐位一致。
+    装载策略从 S11 的「全量预编码 + `HFDataset.from_list`」改为惰性：`__getitem__`
+    被调用时才读图 + `encode_frozen_sample`。编码语义与 S11/G1 复验完全同源
+    （`sft.dataset.encode_frozen_sample` 唯一实现），只是装载时机变了——train_full
+    22,941 条全量预编码约 24 GB，不可驻内存。
     """
-    from datasets import Dataset as HFDataset
+    from drivealign.sft.dataset import make_lazy_sft_dataset
 
-    from drivealign.sft.dataset import encode_frozen_sample, load_frozen_records
-
-    rows = [
-        encode_frozen_sample(processor, rec, dataroot)
-        for rec in load_frozen_records(samples_path)
-    ]
-    return HFDataset.from_list(rows)
+    return make_lazy_sft_dataset(samples_path, processor, dataroot)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -100,12 +109,28 @@ def main(argv: list[str] | None = None) -> int:
     loaded = load_model_and_processor(config)
     dataset = _load_dataset(Path(args.samples), Path(args.dataroot), loaded.processor)
 
+    # CLI 显式覆盖（只在给了参数时才进 override，否则完全走冻结配置的值）。
+    params_override = {
+        key: value
+        for key, value in (
+            ("num_train_epochs", args.epochs),
+            ("save_steps", args.save_steps),
+        )
+        if value is not None
+    }
+
     # 在训练前重置高水位线：之后的峰值 = 模型常驻权重 + 训练激活/梯度（正是要落档的口径）。
     if torch.cuda.is_available():
         torch.cuda.reset_peak_memory_stats()
 
     trainer = train(
-        config, dataset, output_dir=args.out, overfit=args.overfit, loaded=loaded
+        config,
+        dataset,
+        output_dir=args.out,
+        overfit=args.overfit,
+        loaded=loaded,
+        params_override=params_override or None,
+        resume_from_checkpoint=args.resume_from_checkpoint,
     )
 
     # 训练峰值显存必须在生成参照**之前**取走：`base_runner.generate_one` 内部会

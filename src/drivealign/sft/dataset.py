@@ -34,7 +34,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping, Sequence
 
 from drivealign.records.record import DriveAlignRecord
 from drivealign.records.serializer import InputPolicy, serialize
@@ -254,6 +254,74 @@ def load_frozen_records(samples_path: str | Path) -> list[dict[str, Any]]:
     """
     lines = Path(samples_path).read_text(encoding="utf-8").splitlines()
     return [json.loads(line) for line in lines if line.strip()]
+
+
+class LazySftDataset:
+    """map-style 惰性训练数据集（S12 §2.2 / §3 Step 1）。
+
+    为什么需要它
+    ------------
+    S11 smoke 的装载方式是「全样本一次性 `encode_frozen_sample` → `HFDataset.from_list`」。
+    32/128 条可以这么干，但 S12 是 train split 全量 22,941 条：单样本 `pixel_values`
+    约 448×1176×2 B ≈ 1.0 MB，全量 ≈ 24 GB 常驻内存，不可行。
+
+    本类把装载策略改成**惰性**：构造时只持有冻结样本 JSONL 的**文本记录**（几 MB），
+    真正的 `encode_frozen_sample`（读图 + processor 编码）推迟到 `__getitem__` 被调用
+    时逐条发生，内存占用因此与数据集规模无关（O(1)），collator 每 micro-batch 现取现编码。
+
+    语义不变式（§2.1）
+    ------------------
+    本类**不**改动任何编码语义：`__getitem__` 返回的就是 `encode` 的原始返回值，正是
+    S11 训练、G1 复验共用的那条 `encode_frozen_sample` 代码路径（batch=1 下逐样本编码与
+    S11 逐位一致）。四个关键张量字段（`input_ids` / `labels` / `pixel_values` /
+    `image_grid_thw`）与 `sample_token` / `sample_sha256` 原样透出。
+
+    为什么不用 `HFDataset.from_list`（S11_bug_log B5）
+    ------------------------------------------------
+    HF Dataset 的**行索引**会把张量列退化成 `list`（`embed_tokens` 报
+    "argument 'indices' must be Tensor, not list"）。本类直接返回 `encode` 产出的张量
+    对象，配合 `remove_unused_columns=False`（Trainer 不再触碰列），collator 拿到的就是
+    张量；collator 内部仍保留 `torch.as_tensor` 复位，作为 dataloader 侧隐式转换的兜底。
+
+    参数
+    ----
+    records : 冻结样本 JSONL 的逐行 dict（`load_frozen_records` 的返回值）。
+    encode  : 单条 record -> 训练样本 dict 的可调用对象。生产中恒为
+              `functools.partial(encode_frozen_sample, processor, dataroot=...)`；
+              以参数注入是为了让本类的装载策略（惰性/随机访问/顺序无关）可以在
+              **无模型、无 processor** 的 CPU 单测里被独立验证。
+    """
+
+    def __init__(self, records: Sequence[Mapping[str, Any]], encode: Callable[[Mapping[str, Any]], dict[str, Any]]) -> None:
+        # 只做 list() 拷贝：records 是纯文本 dict，量级 MB，不构成内存问题。
+        self._records: list[Mapping[str, Any]] = list(records)
+        self._encode = encode
+
+    def __len__(self) -> int:
+        return len(self._records)
+
+    def __getitem__(self, index: int) -> dict[str, Any]:
+        """现取现编码：读图 + processor 编码都在此处发生（惰性的落点）。"""
+        # 越界由 list 抛 IndexError；负索引沿用 Python 列表语义（sampler 不会产生）。
+        return self._encode(self._records[index])
+
+
+def make_lazy_sft_dataset(
+    samples_path: str | Path,
+    processor: Any,
+    dataroot: str | Path,
+) -> LazySftDataset:
+    """S12 正式训练的装载入口：冻结样本 JSONL → 惰性 Dataset。
+
+    这是 `cli/sft_train.py` 的唯一装载路径。注意本函数**不预编码**任何样本，
+    仅把文本记录读进内存并把 `encode_frozen_sample`（与 G1 复验同一条编码实现）
+    绑定成惰性编码器。
+    """
+    records = load_frozen_records(samples_path)
+    return LazySftDataset(
+        records,
+        lambda record: encode_frozen_sample(processor, record, dataroot),
+    )
 
 
 def encode_frozen_sample(
