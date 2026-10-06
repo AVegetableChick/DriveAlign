@@ -29,7 +29,7 @@
     drivealign.cli.sft_resume_verify \
     --config DriveAlign/configs/sft/sft_1f.yaml \
     --checkpoint runs/S12_sft_1f/checkpoints/sft_1f/checkpoint-500 \
-    --samples runs/S12_sft_1f/sft_samples/train_full.jsonl \
+    --samples data/sft_samples/v6_1f/train_full.jsonl \
     --dataroot data/nuscenes/trainval \
     --report runs/S12_sft_1f/reports/resume_verify.json``
 """

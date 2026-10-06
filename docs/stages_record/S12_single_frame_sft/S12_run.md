@@ -31,10 +31,10 @@
 |---|---|---|
 | 训练冻结配置 | `DriveAlign/configs/sft/sft_1f.yaml` | `06799e25b5e435587b275e28a4f381ff228b6cfb784c4a2c0a9b2fa3410c9b69` |
 | 评测冻结配置 | `DriveAlign/configs/benchmark/sft_1f_v6.yaml` | `6db57767335597d405c881d2e71adbe7bb66a5882bf1a56056e91d652fc07e88` |
-| 规划稿 | `DriveAlign/docs/.../S12_implementation_plan.md` | `e363ce5390a9d348c48e21d95e543dbf1fb4396898fdce3fea113cf5ee18e425` |
+| 规划稿 | `DriveAlign/docs/.../S12_implementation_plan.md` | `6ce8110da4ae748ef22f8741d138d3a5e8ca951c1337f9fa7975ba3ea979b140` |
 | train_full token 列表（A 层） | `data/sft_subsets/train_full_tokens.json` | `1166ff34fa14972bc472c55e59d57428a39ea0648cac8dcf64ef2d5b7d802647` |
-| train_full 训练样本（B 层） | `runs/S12_sft_1f/sft_samples/train_full.jsonl` | `eb84e48ea5b05c2304ede0e8d1ef3b960ddab8082950d5ebc5f325008eed7514` |
-| 样本 manifest | `runs/S12_sft_1f/sft_samples/samples_manifest.json` | `6b98b16e0f80cbc02d9c759b246357ae365844ed52bef26c63625a48703d90a1` |
+| train_full 训练样本（B 层） | `data/sft_samples/v6_1f/train_full.jsonl` | `eb84e48ea5b05c2304ede0e8d1ef3b960ddab8082950d5ebc5f325008eed7514` |
+| 样本 manifest | `data/sft_samples/v6_1f/samples_manifest.json` | `6b98b16e0f80cbc02d9c759b246357ae365844ed52bef26c63625a48703d90a1` |
 | 反事实子集（沿用 S09） | `runs/S09_base_benchmark/counterfactual_subset.txt` | `55bc70cd…`（200 锚，详见 `step2_freeze.json`） |
 
 Step 2 的 G3 独立复核结论（重读 v6 manifest 逐样本核，不依赖构造期断言）：22,941 行、0 重复、
@@ -80,7 +80,7 @@ git -C DriveAlign rev-parse HEAD
 sha256sum DriveAlign/configs/sft/sft_1f.yaml
 
 # ④ 核对训练样本未被改动（应为 eb84e48e…，见 §1.1）
-sha256sum runs/S12_sft_1f/sft_samples/train_full.jsonl
+sha256sum data/sft_samples/v6_1f/train_full.jsonl
 ```
 
 ### 2.2 正式训练（tmux，约 8.7–10 h）
@@ -97,7 +97,7 @@ set -o pipefail
 
 PYTHONPATH=DriveAlign/src python -m drivealign.cli.sft_train \
   --config DriveAlign/configs/sft/sft_1f.yaml \
-  --samples runs/S12_sft_1f/sft_samples/train_full.jsonl \
+  --samples data/sft_samples/v6_1f/train_full.jsonl \
   --out runs/S12_sft_1f/checkpoints/sft_1f \
   --dataroot data/nuscenes/trainval \
   2>&1 | tee runs/S12_sft_1f/reports/step3_train.log
@@ -108,7 +108,7 @@ PYTHONPATH=DriveAlign/src python -m drivealign.cli.sft_train \
 ```bash
 PYTHONPATH=DriveAlign/src python -m drivealign.cli.sft_train \
   --config DriveAlign/configs/sft/sft_1f.yaml \
-  --samples runs/S12_sft_1f/sft_samples/train_full.jsonl \
+  --samples data/sft_samples/v6_1f/train_full.jsonl \
   --out runs/S12_sft_1f/checkpoints/sft_1f \
   --dataroot data/nuscenes/trainval \
   --resume-from-checkpoint runs/S12_sft_1f/checkpoints/sft_1f/checkpoint-5000 \

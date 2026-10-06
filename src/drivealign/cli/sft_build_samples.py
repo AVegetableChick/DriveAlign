@@ -18,14 +18,18 @@ train32/overfit128 实际是"两个可复用性不同的资产"叠在一起：
         B) 读 token 列表 + 当前 face 的 anchor manifest，按当前 face 重打
            序列化样本 JSONL + samples_manifest（落 `--out-dir`）。每面一份。
 
-A 落位：`data/ <可复用 sft_subsets>`（不绑定实验）。
-B 落位：`runs/S11_sft_smoke/sft_samples/`（绑定 face + git commit 的实验 artifact）。
+A 落位：`data/ <可复用 sft_subsets>`（不绑定实验；跨 contract 复用）。
+B 落位：`data/sft_samples/<face>/`（按 face 版本化，如 `data/sft_samples/v6_1f/`）。
+        **2026-10-07 更正**：原定 `runs/<stage>/sft_samples/`（S11 smoke 即如此落），
+        那会把训练**输入**与运行**输出**混在 `runs/` 下——清 `runs/` 会连训练集一起删。
+        样本只含 prompt/target 文本、不含像素，其依赖维度是 contract + policy 而非分辨率，
+        故按 face 命名（`v6_1f` = contract v6 + policy 1F），S13 沿用同 face 可直接复用。
 
 输出（serialize）
 -----------------
-    runs/S11_sft_smoke/sft_samples/train32.jsonl
-    runs/S11_sft_smoke/sft_samples/overfit128.jsonl
-    runs/S11_sft_smoke/sft_samples/samples_manifest.json
+    <out-dir>/train32.jsonl
+    <out-dir>/overfit128.jsonl
+    <out-dir>/samples_manifest.json
 
 S12（§3 Step 2）在同一 A/B 分层上追加 **train_full**：A 层 = train split 全量
 token 列表（字典序，`train_full_tokens.json`），B 层 = `train_full.jsonl`
