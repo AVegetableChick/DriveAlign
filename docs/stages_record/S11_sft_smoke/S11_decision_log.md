@@ -29,6 +29,27 @@
 
 ---
 
+## 2026-10-06 裁定记录
+
+### D3：v6 面过渡落地 + 1F Base v6 重跑（Step 0.3/0.4 执行记录）
+
+- **三跑覆盖**：主评测 = test split 全量 **5,468 锚**（v6 面）；反事实 blank / shuffled 各 **200 锚**（`runs/S09_base_benchmark/counterfactual_subset.txt`，与 S09 v5 电池同构）。串行 fail-fast（`set -euo pipefail`）、三步推理均带 `--resume`、**GPU 独占**；主跑 `wall_seconds = 25,267.6` s（≈7.0 h），两组反事实各约 14 分钟。反事实必须带 `--anchors-file`，否则会误跑成全量 5468×2。
+- **G0.1–G0.5 判定：全 PASS**（G0.3/G0.4/G0.5 于 2026-10-06 补判；G0.1/G0.2 于 2026-10-05 已判）。
+- **冻结物 sha256**（完整表见 [S09_v6_face_rerun.md §冻结物](../S09_base_benchmark/S09_v6_face_rerun.md)）：
+
+  | 冻结物 | 路径 | sha256 |
+  |---|---|---|
+  | v6 prompt | `configs/contracts/v6/prompt.txt` | `242b632b279e87d9cf355fe42803f7381fa983adebe82d07b5597cbbe692ec10` |
+  | v6 output schema | `configs/contracts/v6/output_schema.json` | `22efe8f8738aadb14e654a7357f02892049085ba42ab9e17fbf86cffe205419a` |
+  | v6 benchmark 配置 | `configs/benchmark/base_1f_v6.yaml` | `4c729e66784d30fc0422cb24996eb7da8a74b5fd5342c477f0430357035fb012` |
+  | v6 anchor manifest | `data/face_manifests/v6/anchor_policy_manifest.json` | `2abe8c4feb43067e294f6af743efcc01e72729aacb94f92764d0f349c239acd1` |
+  | v6 eval 报告 | `runs/S09_base_benchmark/eval_v6/eval_report.json` | `be2cb6b902e062202dc2f841357d9711dbb1c744091968da0aaf048348255013` |
+
+- **产物位置**：`runs/S09_base_benchmark/eval_v6/`（`predictions.jsonl` + `predictions_cf_blank.jsonl` / `predictions_cf_shuffled.jsonl` + `main.log` / `cf_blank.log` / `cf_shuffled.log` / `evaluate.log` + `run_summary_*.json` + `eval_report.json` / `eval_report.md` + `anchor_scores.jsonl`）。**执行脚本**：`DriveAlign/scripts/s11_step03_v6_base_rerun.sh`。
+- **行为结论登记**：v5/v6 两面的 action 决策轴均退化为**常量预测器**（方向相反：v5 恒 DECELERATE + 让行，v6 恒 KEEP_SPEED + 不让行），v6 的 speed F1 提升是**多数类假象**而非能力提升；感知轴（object / risk / motion）两侧无显著变化。据此把"**多数类常量基线 + counterfactual action_flip_rate**"登记为 **S12 的必报项**。完整论证与双面标注规则见 [S09_v6_face_rerun.md](../S09_base_benchmark/S09_v6_face_rerun.md)。
+
+---
+
 ## 阶段关闭核对（待 Step 5 填写）
 
 - [ ] 参数冻结表（SFT 关键参数与 sha）

@@ -1,6 +1,6 @@
 # S11 实施规划（SFT 计算 Smoke：1F 半边，2026-10-05，v2 修订）
 
-> 状态：**规划已确认（2026-10-05 v2 修订），Step 0 进行中**。本版相对 v1 的核心变化：模型面升版 v6（删除 reasoning 字段），target 构造大幅简化，执行顺序按用户修订（0.1/0.2 → SFT 探索 → 0.3 夜间 → 0.4）。
+> 状态：**规划已确认（2026-10-05 v2 修订），Step 0 已完成（G0.1–G0.5 全 PASS，2026-10-06）**。本版相对 v1 的核心变化：模型面升版 v6（删除 reasoning 字段），target 构造大幅简化，执行顺序按用户修订（0.1/0.2 → SFT 探索 → 0.3 夜间 → 0.4）。
 > 裁定链：reasoning 字段监督方式经多轮讨论后裁定从模型面整体删除，完整论证与被否方案台账见 [S11_reasoning_supervision_decision.md](S11_reasoning_supervision_decision.md)；Step 0 过渡执行计划见 [S11_step0_v6_face_transition.md](S11_step0_v6_face_transition.md)。
 > 链路裁定：S09 已关闭 → Step 0（v6 面 + Base 重跑）→ **S11 仅做 1F 半边**（32 条 train/save/reload + 128 条 overfit）→ S12 全量 SFT；S10 与 S11-4F 后置（4F smoke 留待 S13 前补跑）。
 > 执行环境约定：沿用 S08/S09——命令先 `conda activate autovla_codeclean`；GPU 长跑用 tmux 且 `| tee` 前必加 `set -o pipefail`；物理盘（/root/autodl-tmp/datasets）写入由用户执行，workspace 内 `runs/` 写入可由 agent sandbox 执行。

@@ -1,6 +1,6 @@
 # S11 Step 0 实施计划（v6 模型面过渡 + 1F Base 重跑，2026-10-05）
 
-> 状态：**Step 0.1/0.2 已完成（2026-10-05，G0.1/G0.2 PASS）**；Step 0.3（GPU 重跑，用户夜间）与 Step 0.4（冻结落档）待执行。裁定依据见 [S11_reasoning_supervision_decision.md](S11_reasoning_supervision_decision.md)（最终裁定：模型面删除 reasoning 字段，升版 v6）；执行顺序为用户修订版：**0.1 → 0.2 → SFT Step 1 探索（并行）→ 0.3（用户夜间 GPU）→ 0.4**。
+> 状态：**Step 0.1–0.4 全部完成（2026-10-06），G0.1–G0.5 全 PASS**。裁定依据见 [S11_reasoning_supervision_decision.md](S11_reasoning_supervision_decision.md)（最终裁定：模型面删除 reasoning 字段，升版 v6）；执行顺序为用户修订版：**0.1 → 0.2 → SFT Step 1 探索（并行）→ 0.3（用户夜间 GPU）→ 0.4**。
 > 沿用先例：v4→v5 面过渡（[contracts/versions.py](/root/autodl-tmp/drivealign_workspace/DriveAlign/src/drivealign/contracts/versions.py) docstring 配对历史）——v5 当年"改 prompt、自有面、数据集不重建、manifest 派生进 runs/"的整套机制即本计划模板。
 
 ## 0. 裁定与不变式
@@ -60,12 +60,38 @@ python -m drivealign.cli.evaluate \
 
 （具体 flag 名以 [cli/base_benchmark.py](/root/autodl-tmp/drivealign_workspace/DriveAlign/src/drivealign/cli/base_benchmark.py) / [cli/evaluate.py](/root/autodl-tmp/drivealign_workspace/DriveAlign/src/drivealign/cli/evaluate.py) argparse 为准，执行前核对。）tmux 内执行，`| tee` 前必加 `set -o pipefail`。时长预期 ≤ v5（每帧输出少 reasoning 段 ~40–60 tok）。反事实组确认全跑，保证解耦基线（blank/shuffled flip 率）同步重建。
 
+**实际执行（2026-10-05 夜 → 2026-10-06）**：上面计划块里的 `--output-dir` 等 flag 名与实际 argparse 不符，已被实际执行的脚本取代——**以脚本为准**：`DriveAlign/scripts/s11_step03_v6_base_rerun.sh`（严格串行、`set -euo pipefail` fail-fast，三步推理均带 `--resume`，GPU 独占）。三步命令形态：
+
+```bash
+# [1] 主评测：test 全量 5,468 锚（v6 面）
+python -m drivealign.cli.base_benchmark \
+  --config DriveAlign/configs/benchmark/base_1f_v6.yaml \
+  --anchor-manifest data/face_manifests/v6/anchor_policy_manifest.json \
+  --dataset-root data/dataset_v4 --nuscenes-dataroot data/nuscenes/trainval \
+  --resume --out runs/S09_base_benchmark/eval_v6/predictions.jsonl
+# [2][3] 反事实 blank / shuffled：同一命令形状，另加
+#   --anchors-file runs/S09_base_benchmark/counterfactual_subset.txt
+#   --image-transform blank|shuffled
+#   --out 分别 runs/S09_base_benchmark/eval_v6/predictions_cf_{blank,shuffled}.jsonl
+# [4] 指标汇总（eval_v1，纯 CPU）
+python -m drivealign.cli.evaluate \
+  --predictions runs/S09_base_benchmark/eval_v6/predictions.jsonl \
+  --anchor-manifest data/face_manifests/v6/anchor_policy_manifest.json \
+  --dataset-root data/dataset_v4 \
+  --config DriveAlign/configs/evaluation/eval_v1.yaml \
+  --out runs/S09_base_benchmark/eval_v6 \
+  --counterfactual-blank runs/S09_base_benchmark/eval_v6/predictions_cf_blank.jsonl \
+  --counterfactual-shuffled runs/S09_base_benchmark/eval_v6/predictions_cf_shuffled.jsonl
+```
+
+**产物清单**（均在 `runs/S09_base_benchmark/eval_v6/`）：三个 predictions（`predictions.jsonl` / `predictions_cf_blank.jsonl` / `predictions_cf_shuffled.jsonl`）、三个运行日志（`main.log` / `cf_blank.log` / `cf_shuffled.log`，另有 `evaluate.log` 与总控 `step03.log`）、`run_summary_predictions*.json`、`eval_report.json` / `eval_report.md`、`anchor_scores.jsonl`。主跑 `wall_seconds = 25,267.6` s（≈7.0 h），反事实各约 14 分钟。
+
 ## 4. Step 0.4：冻结与落档（CPU，收尾）
 
-1. sha 登记：v6 prompt.txt、v6 manifest、新 eval 配置（面引用 v5→v6，指标定义不动）→ S11 决策台账。
-2. 新建 `../S09_base_benchmark/S09_v6_face_rerun.md` 附录：v5→v6 主指标对照表 + **双面标注规则**——S09 存档读数为 v5 面，S12 的 Base→SFT 对比基准 **= v6 重跑读数**；此后所有文档数字必须带面标签。
-3. `../S09_base_benchmark/S09_reasoning_supervision.md` 加 closure note：路线 2 预注册被 v6 删除裁定取代，指向讨论总结文档。
-4. S11 决策台账条目：v6 过渡裁定 + 本 Step 0 执行记录。
+1. sha 登记：v6 prompt.txt、v6 output schema、v6 manifest、benchmark 配置 `base_1f_v6.yaml`、eval 配置（v5/v6 共用）→ S11 决策台账。**已完成（2026-10-06）**：完整 sha 表见 [S09_v6_face_rerun.md §冻结物](../S09_base_benchmark/S09_v6_face_rerun.md) 与 [S11_decision_log.md](S11_decision_log.md) D3 条目。
+2. 新建 `../S09_base_benchmark/S09_v6_face_rerun.md` 附录：v5→v6 主指标对照表 + **双面标注规则**——S09 存档读数为 v5 面，S12 的 Base→SFT 对比基准 **= `runs/S09_base_benchmark/eval_v6/`（v6 重跑读数）**；此后所有文档数字必须带面标签。**已完成（2026-10-06）**，产物：`docs/stages_record/S09_base_benchmark/S09_v6_face_rerun.md`。
+3. `../S09_base_benchmark/S09_reasoning_supervision.md` 加 closure note：路线 2 预注册被 v6 删除裁定取代，指向讨论总结文档。**已完成（2026-10-06）**，产物：该文末 `## Closure note（2026-10-06）`，并把路线 2 状态单元格改判为"已被取代（2026-10-06）"、原义务待办加作废标注。
+4. S11 决策台账条目：v6 过渡裁定 + 本 Step 0 执行记录。**已完成（2026-10-06）**，产物：[S11_decision_log.md](S11_decision_log.md) `## 2026-10-06 裁定记录` → D3 条目。
 
 ## 5. Gate 表（G0.x）
 
@@ -73,9 +99,9 @@ python -m drivealign.cli.evaluate \
 |---|---|---|
 | G0.1 | v6 面单测全绿；v1–v5 字节钉子不动；dataset_verify 回归 PASS（records 零影响证明） | **PASS**（2026-10-05）`pytest DriveAlign/tests/unit -q` → **269 passed**；v1–v5 configs 逐字节未动（git diff 空，仅新增 `configs/contracts/v6/`、改 `versions.py`/`output.py`）；records 零影响由 `test_dataset_v4_records_bind_own_face_unaffected_by_default` 证明——GT 用 record 自身显式 v4 重新 parse，`serialize()` 现盖 v6 仅为 face-stamp 变化而非记录突变 |
 | G0.2 | v6 manifest parity：逐锚点 hash 一致 + v5→v6 diff 仅 prompt reasoning 行 + 重建两次逐字节一致 | **PASS**（2026-10-05）manifest sha `2abe8c4f…`（`determinism_run2` 重建字节一致）；parity 抽检 25 锚点：逐锚点 hash == manifest v6 值、v5→v6 request 文本 diff 唯一差异为 reasoning 行、image relpath 25/25 可解析 |
-| G0.3 | Base v6 主评测 + blank/shuffled 反事实三跑完成，无 NaN/异常中断，日志与预测文件完整 | PASS/FAIL |
-| G0.4 | 指标汇总产出且与 v5 读数量级可比（大幅异常 → 先查面 diff 再下结论）；双面标注落档 | PASS/FAIL |
-| G0.5 | 冻结物 sha 齐全登记；决策台账/附录/closure note 落档 | PASS/FAIL |
+| G0.3 | Base v6 主评测 + blank/shuffled 反事实三跑完成，无 NaN/异常中断，日志与预测文件完整 | **PASS（2026-10-06）** 主跑 test 全量 **5,468 锚**（`wall_seconds = 25,267.6` s ≈7.0 h）+ blank 200 / shuffled 200（各约 14 min）；coverage anchors_expected 5468 / scored 5468 / missing 0 / extra 0，无 NaN/异常中断，三份 predictions 与日志完整 |
+| G0.4 | 指标汇总产出且与 v5 读数量级可比（大幅异常 → 先查面 diff 再下结论）；双面标注落档 | **PASS（2026-10-06）** 指标汇总已产出（`runs/S09_base_benchmark/eval_v6/eval_report.json`）；yield 轴量级差异已定位为**面效应**——唯一变量 = 推理期 prompt 删 reasoning 行（面 diff 审计见 [S09_v6_face_rerun.md](../S09_base_benchmark/S09_v6_face_rerun.md) §面 diff 审计），非 bug；双面标注规则已落档（同文 §双面标注规则）。感知轴量级可比（Δ 在 CI 内），决策轴翻面属删 CoT 槽位的预期效应 |
+| G0.5 | 冻结物 sha 齐全登记；决策台账/附录/closure note 落档 | **PASS（2026-10-06）** 冻结物 sha256 齐全登记（8 项，见 [S09_v6_face_rerun.md](../S09_base_benchmark/S09_v6_face_rerun.md) §冻结物 sha256 登记表）；[S11_decision_log.md](S11_decision_log.md) D3 条目、S09 v6 附录、reasoning supervision closure note 均已落档 |
 
 ## 6. 风险与回退
 

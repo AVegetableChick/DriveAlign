@@ -1,0 +1,46 @@
+# S11 Step 0.3 - 1F Base v6-face 全量重跑配置（`configs/benchmark/base_1f_v6.yaml`）
+#
+# 来源：逐字段复制 S09 的 `configs/benchmark/base_1f.yaml`（frozen v5 存档，
+# sha256 `1aab7db306b17f3688587e5d6006a98bb6a3fcc16326c26b8c8a2066d1332cb4`），
+# 仅改两处：`run_name`（base_1f -> base_1f_v6）与 `contract_version`（v5 -> v6）。
+# v5 原件保持零改动，S09 存档与可复现性不受影响。
+#
+# 为什么必须新建而不是原地改：`serialize()` 现在固定按
+# `DEFAULT_CONTRACT_VERSION="v6"` 生成序列化请求（v6 模型面：prompt/schema 删除
+# reasoning 字段），而 base_benchmark 的模型面一致性守卫会拿 config 里的
+# `contract_version` 重建 runner prompt 做比对；若仍写 v5 会在首个锚点直接
+# 抛 "runner prompt diverges from the serialized request prompt"，拒绝开跑。
+#
+# 冻结要旨（与 S09 口径完全一致，保证 v5/v6 双面读数可比）：
+#   - policy=1F、split=test、greedy 解码（do_sample=false / temperature=0.0 /
+#     max_new_tokens=512，沿 S03 截断教训）、dtype=bfloat16、seed=0、
+#     speed_line_precision=3：全部钉死，不得改。
+#   - 唯一面变更：contract_version=v6（request hash 因此与 v5 面不同，锚集逐项一致）。
+#   - sha256 须在 Step 0.4 登记进 S11 决策台账。
+
+status: frozen
+run_name: base_1f_v6
+split: test
+input_policy: 1F
+contract_version: v6
+image_transform: null
+
+model:
+  path: /root/autodl-tmp/drivealign_workspace/models/Qwen2.5-VL-3B-Instruct
+  revision: null
+  dtype: bfloat16
+  device_map: auto
+  attn_implementation: flash_attention_2
+  processor:
+    use_fast: true
+
+runtime:
+  local_files_only: true
+
+generation:
+  do_sample: false
+  temperature: 0.0
+  max_new_tokens: 512
+
+speed_line_precision: 3
+seed: 0

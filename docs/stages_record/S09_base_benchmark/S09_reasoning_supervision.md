@@ -26,7 +26,7 @@ pilot/全量产物显示：Base 未微调模型的 reasoning 输出格式自由�
 | # | 路线 | 优点 | 代价/风险 | 状态 |
 |---|---|---|---|---|
 | 1 | 模板 reasoning 监督（GT 现状，逐 token 计算 loss） | reasoning↔GT 字段双向一致可验；监督信号干净；训练期零异常 | **推理错配 + 归因污染**（机制见上节）：action 头在训练时被优化为"从 reasoning 决策句抄答案"（模板=标签的同义编码），推理时该通道流的是模型自身信念，错误视觉信念被 verbalize 成笃定承诺后照抄执行；S12 结构化指标提升 = 看图学习 + 格式机制学习的混合，M09 无法区分。模板塌缩（信息量趋零）只是表象 | GT 资产形态（S08 冻结），默认监督源 |
-| 2 | **不监督 reasoning（loss masking）** | 模板梯度为零，从根上杜绝模板塌缩；reasoning 保持 Base 自由风格；实现近零成本——collator 对 reasoning 值域 token 置 loss 权重 0，schema 不变、模型推理时仍输出 reasoning 字段；train/infer 错配（action 头推理时看到 OOD 自由文本）反而**打断了抄答案捷径**，迫使 action 依赖图像与被监督的结构化字段，S12 归因干净 | reasoning 与结构化字段的一致性**无监督约束**，推理时可能出现文本与 `speed_action`/`yield_required` 矛盾的输出；reasoning 质量只能人工抽检 | **推荐路线（2026-10-03）**，待 S11 规划确认 |
+| 2 | **不监督 reasoning（loss masking）** | 模板梯度为零，从根上杜绝模板塌缩；reasoning 保持 Base 自由风格；实现近零成本——collator 对 reasoning 值域 token 置 loss 权重 0，schema 不变、模型推理时仍输出 reasoning 字段；train/infer 错配（action 头推理时看到 OOD 自由文本）反而**打断了抄答案捷径**，迫使 action 依赖图像与被监督的结构化字段，S12 归因干净 | reasoning 与结构化字段的一致性**无监督约束**，推理时可能出现文本与 `speed_action`/`yield_required` 矛盾的输出；reasoning 质量只能人工抽检 | ~~推荐路线（2026-10-03）~~ **已被取代（2026-10-06）**——S11 最终裁定不执行路线 2，改为在模型面直接删除 reasoning 字段（contract v6，四字段全监督）；裁定链见 [S11_reasoning_supervision_decision.md](../S11_sft_smoke/S11_reasoning_supervision_decision.md) |
 | 3 | 自蒸馏 rejection sampling（STaR 式） | 兼得流畅性与可验证性：对每帧采样多条自由 reasoning，仅保留结构化字段与 GT 逐项一致的样本做监督（保留条件机械可查） | 需额外采样轮与过滤管线，v2 工作量 | 未来方向 |
 | 4 | DriveLM 增强包（人工/大模型自由文本） | 语言多样性最高 | 覆盖 14.5%、~93 QA/帧需重过滤、与规则 GT 冲突需清洗；增强包当前关闭 | 备选 |
 
@@ -39,7 +39,15 @@ pilot/全量产物显示：Base 未微调模型的 reasoning 输出格式自由�
 
 ## 待办（S11 规划拍板时明确）
 
+（本节随路线 2 被取代而作废，2026-10-06）
+
 若选路线 2（推荐），S11 文档需定义 loss masking 实现细节：
 1. mask 范围 = reasoning **值域 token**（JSON 内 `"reasoning": "..."` 的字符串内容），JSON 结构键与其余四字段（critical_objects/risk_factors/yield_required/speed_action）照常监督；
 2. collator 实现方式与单测（mask 边界的 tokenizer 偏移正确性）；
 3. S12 人工抽检方案（reasoning↔结构化字段矛盾率抽检表）。
+
+## Closure note（2026-10-06）
+
+S11 最终裁定**不执行路线 2**（loss masking），改为在**模型面直接删除 reasoning 字段**（contract 升版 v6，四字段全监督：critical_objects / risk_factors / yield_required / speed_action）。裁定链见 [S11_reasoning_supervision_decision.md](../S11_sft_smoke/S11_reasoning_supervision_decision.md)（§1 R3/R5 给出路线 2 被否理由、§2 台账记录取代关系）。
+
+实证支撑（**旁证，非对照实验**）：S11 Step 0.3 的 v6 面 Base 重跑（[S09_v6_face_rerun.md](S09_v6_face_rerun.md)）显示，删掉 CoT 槽位后感知轴读数（object / risk / motion）无显著变化、决策轴（yield / speed）整体翻转，可作为"模板 reasoning 未提供对决策有用的视觉增量信息"的一个旁证。须强调：**这是旁证，不是路线 2 与 v6 的对照实验**——两者从未在同条件下对比过（路线 2 从未执行），故不应据此对路线 2 本身下结论，只能作为"删除 reasoning 未损及感知表现"的一侧证据。
