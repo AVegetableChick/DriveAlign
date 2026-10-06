@@ -1,6 +1,6 @@
 # S12 实施规划（正式单帧 SFT：SFT-1F，2026-10-07，v1）
 
-> 状态：**规划稿（v1），待用户评审与冻结**。本阶段依据 [docs/stages_plan/12_single_frame_sft.md](../../../stages_plan/12_single_frame_sft.md)。
+> 状态：**已冻结（v1，2026-10-07）**。A–J 十项拍板见 §6；冻结后**阈值与口径不得就地改写**（要改走决策台账 + 新版本）。本阶段依据 [docs/stages_plan/12_single_frame_sft.md](../../../stages_plan/12_single_frame_sft.md)。
 > 前置：S11 阶段关闭（G6/G7 判定完成、关闭核对表清零、`S11_smoke_run.md` 创建）——**已于 2026-10-07 满足**。
 > 链路裁定（S11 §8 已登记）：S12 从**同一 Base checkpoint** 出发训练正式 `SFT-1F`；对比基准 = `runs/S09_base_benchmark/eval_v6/`（v6 面，**非** S09 存档 v5 读数）；S10 与 S11-4F 继续后置。
 > 执行环境约定：沿用 S08/S09/S11——命令先 `conda activate autovla_codeclean`；GPU 长跑用 tmux 且 `| tee` 前必加 `set -o pipefail`；物理盘（`/root/autodl-tmp/datasets`）写入由用户执行，workspace 内 `runs/` 写入可由 agent sandbox 执行。
