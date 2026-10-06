@@ -1,7 +1,7 @@
 # S09 实施规划（单帧未微调 Base Benchmark，2026-10-03）
 
 > 状态：**已执行完毕并关闭（2026-10-05）**——Step 0–6 全部完成，gates 判定与阶段关闭核对见 `S09_decision_log.md` §3；本规划保留执行时的原始口径（含 §7 拍板记录）。
-> 本阶段依据 `docs/project_stages/09_single_frame_base_benchmark.md`。
+> 本阶段依据 `docs/stages_plan/09_single_frame_base_benchmark.md`。
 > 链路裁定（已与用户确认）：执行顺序 S09 → S11（仅 1F 半边）→ S12；S10 与 S11-4F 后置，S09 承担的预注册义务见 §4 Step 2。
 > 执行环境约定：沿用 S08——命令先 `conda activate autovla_codeclean`；长跑（GPU 推理）用 tmux 且 `| tee` 前必加 `set -o pipefail`；物理盘（/root/autodl-tmp/datasets）写入只能由用户执行，workspace 内 `runs/` 写入可由 agent sandbox 执行。
 

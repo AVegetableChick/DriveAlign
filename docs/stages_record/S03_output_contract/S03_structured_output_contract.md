@@ -25,7 +25,7 @@
 
 ## 3. 目标与边界
 
-按 `docs/project_stages/03_structured_output_contract.md`：冻结第一阶段输出 Schema，打通 Base 模型"生成原始文本 → 严格解析 → 逐项校验"闭环。使用人工选定受控图片，不构建正式数据集，不做 M09 指标。完成标准：解析失败可结构化记录且不中断批处理，成功结果满足版本化 Schema。
+按 `docs/stages_plan/03_structured_output_contract.md`：冻结第一阶段输出 Schema，打通 Base 模型"生成原始文本 → 严格解析 → 逐项校验"闭环。使用人工选定受控图片，不构建正式数据集，不做 M09 指标。完成标准：解析失败可结构化记录且不中断批处理，成功结果满足版本化 Schema。
 
 ## 4. 输入与产物
 

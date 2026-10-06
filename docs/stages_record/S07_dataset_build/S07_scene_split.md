@@ -1,6 +1,6 @@
 # Stage 07 Step 1：分层字典序场景划分记录
 
-> 2026-10-01 执行。决策依据：D3（数据资产/运行产物分离）、D4（分层字典序切分），见 `S07_input_validation.md` 与 `docs/project_stages/07_dataset_build_and_split.md`（2026-10-01 D3/D4 冻结版）。
+> 2026-10-01 执行。决策依据：D3（数据资产/运行产物分离）、D4（分层字典序切分），见 `S07_input_validation.md` 与 `docs/stages_plan/07_dataset_build_and_split.md`（2026-10-01 D3/D4 冻结版）。
 
 ## 1. 目标与边界
 

@@ -7,7 +7,7 @@
 
 | 决议 | 内容 |
 |---|---|
-| S08 范围 | 填全 train/val/test 全部 valid 记录 GT（train 22,941 / val 2,531 / test 5,468 = **30,940**；quarantine 659 条不回填）+ 同一确定性规则引擎冻结 M09 Evaluation Oracle。方案文档已对齐：`project_stages/08_m09_oracle.md`、`project_stages/README.md`（索引行 + 执行位置） |
+| S08 范围 | 填全 train/val/test 全部 valid 记录 GT（train 22,941 / val 2,531 / test 5,468 = **30,940**；quarantine 659 条不回填）+ 同一确定性规则引擎冻结 M09 Evaluation Oracle。方案文档已对齐：`stages_plan/08_m09_oracle.md`、`stages_plan/README.md`（索引行 + 执行位置） |
 | P2 相机口径 | **只含 CAM_FRONT**，扩视角留待未来 contract 级 ablation。视锥外关键对象由 observability 门控排除——**门控在前、top-8 在后**（反序会让不可见对象挤占名额缩小打分集合）；"相关但不可见"比率进 observability/coverage 报告按 split 量化，记为已知限制。`select_objects(rule_config)` 参数化预留相机集合扩展 |
 | P3 DriveLM 增强包 | **关闭**，后续是否加入未定。`language_reference` 恒 None（字段零成本保留，彻底否决后可在下一代修剪）；D5/D6 冻结设计继续封存，不执行 |
 | Contract v4 | **新建**。模型面（prompt / schema / parser / serializer）零改动 → v4 重建后 `request_hash_1f/4f` 必须与 v3 anchor manifest **逐值相同**（回归 gate）；`record_version` 不动（training_targets 是 Record v1 预留字段，填值不改 schema）；S03 §9 的 schema v4 候选（coarse_distance / 信号灯类）不进本次 v4，信号灯类在 P2/P3 前提下实质永久关闭 |
@@ -39,7 +39,7 @@
 - 精确三分类（2026-10-02 精确化）：(a) **behind 检查**——任一角点深度 ≤ ε → unscorable 整框丢弃（防跨相机平面的退化投影）；(b) 全角点在相机平面之前：AABB 与图像不相交 → unscorable；AABB 完整在界内 → observable（bbox = AABB）；AABB 越界但相交 → **inferable**（bbox = clip 后可见部分）。**部分可见的精确定义 = 全角点在相机平面之前 + 投影框越过图像边界**；与 ego 并排、尾部角点在平面之后的近距大目标被 behind 规则挡住（保守合理：退化框 clip 无意义）
 - GT 两侧同源：expected_output 的 bbox_2d 与 M09 IoU 打分均用同一个 clip 后框（同一实现）
 - 可选防退化参数（进 P1.2 标定候选）：clip 后有效面积占比 / 可见角点数下限（devkit vis_threshold 同思路），不达标判 unscorable
-- **observability 三态（2026-10-02 用户确认，由四态简化）**：observable / inferable / unscorable。原 privileged 态（"需未来信息方可判定关键性"的豁免通道）在 GT 派生全面改为 t0 证据口径后恒为空集，删除；`project_stages/08_m09_oracle.md`、`codebase/05` 蓝图已同步修订。功能定位：该标签 = 评测分母资格审查（unscorable 不进分母，防"考不可能看到的对象"）+ 训练标签可学性过滤（behind 对象无 bbox_2d 可写）+ 每帧剔除原因审计（不可见率报告的数据源）
+- **observability 三态（2026-10-02 用户确认，由四态简化）**：observable / inferable / unscorable。原 privileged 态（"需未来信息方可判定关键性"的豁免通道）在 GT 派生全面改为 t0 证据口径后恒为空集，删除；`stages_plan/08_m09_oracle.md`、`codebase/05` 蓝图已同步修订。功能定位：该标签 = 评测分母资格审查（unscorable 不进分母，防"考不可能看到的对象"）+ 训练标签可学性过滤（behind 对象无 bbox_2d 可写）+ 每帧剔除原因审计（不可见率报告的数据源）
 
 ### P1.4 motion_state GT 数值（示例值，train-only 标定后冻结）
 

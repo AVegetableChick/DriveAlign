@@ -15,7 +15,7 @@
 ### DriveAlign
 
 - Repository HEAD：`00f3e20329680801787d85a5aa0ed66d55016b89`
-- 说明：Stage 04 全部新增代码（`cli/nuscenes_mini_smoke.py`、`data/`、`evaluation/`）在记录时均为 untracked，不包含在该 commit 中。另注意 `docs/project_stages/` 整体被 `.gitignore`（第 195 行）忽略，阶段文档仅本地留存。
+- 说明：Stage 04 全部新增代码（`cli/nuscenes_mini_smoke.py`、`data/`、`evaluation/`）在记录时均为 untracked，不包含在该 commit 中。另注意 `docs/stages_plan/` 整体被 `.gitignore`（第 195 行）忽略，阶段文档仅本地留存。
 
 ### 上游仓库
 
@@ -24,7 +24,7 @@
 
 ## 3. 目标与边界
 
-按 `docs/project_stages/04_nuscenes_mini_smoke.md`：用官方 nuScenes-devkit 验证 `v1.0-mini` 的 CAM_FRONT 历史链、时间戳、图片路径和当前帧 3D box 投影。本阶段不生成 DriveAlignRecord、不划分正式数据、不派生风险标签。经用户确认增补：本阶段必须输出**连续四帧可视化图像及 GT 框投影**，且**四帧各画各自的 keyframe GT**（四帧均为 keyframe，各有标注），以同时验证历史帧链与逐帧投影正确性。完成标准：至少一个 anchor 得到同 scene、严格递增的四帧窗口，当前帧至少一个可见 GT box 合法投影，全 Gate 通过且重跑可复现。
+按 `docs/stages_plan/04_nuscenes_mini_smoke.md`：用官方 nuScenes-devkit 验证 `v1.0-mini` 的 CAM_FRONT 历史链、时间戳、图片路径和当前帧 3D box 投影。本阶段不生成 DriveAlignRecord、不划分正式数据、不派生风险标签。经用户确认增补：本阶段必须输出**连续四帧可视化图像及 GT 框投影**，且**四帧各画各自的 keyframe GT**（四帧均为 keyframe，各有标注），以同时验证历史帧链与逐帧投影正确性。完成标准：至少一个 anchor 得到同 scene、严格递增的四帧窗口，当前帧至少一个可见 GT box 合法投影，全 Gate 通过且重跑可复现。
 
 ## 4. 输入与产物
 
@@ -34,7 +34,7 @@
 - 产物 2：`evaluation/projection.py` —— `camera_boxes_for_frame`（薄封装 `get_sample_data`，box 已在 sensor frame，不二次变换）、`project_box`（`view_points` + sensor 系 z 作真实深度）、`classify_visibility`（`visible/clipped/behind/out`，复刻 `box_in_image` 语义 + 0.5 margin）
 - 产物 3：`evaluation/box_render.py` —— 纯 PIL 绘制（无 matplotlib、无系统字体、无墙钟内容，保证确定性）：12 棱线框 + 朝向线（0→5），固定 10 类配色 + md5 兜底，2×2 网格合成
 - 产物 4：`cli/nuscenes_mini_smoke.py` —— 入口 CLI，链校验 + 逐帧投影 + 报告 + 可视化，`summary.json` 携带 gate 布尔与 `report_sha256`
-- 产物 5：`docs/project_stages/04_nuscenes_mini_smoke.md` 产物清单与代码路径同步更新（该目录不入 Git）
+- 产物 5：`docs/stages_plan/04_nuscenes_mini_smoke.md` 产物清单与代码路径同步更新（该目录不入 Git）
 
 ## 5. 执行流程
 

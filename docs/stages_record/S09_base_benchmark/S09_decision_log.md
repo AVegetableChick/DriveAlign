@@ -73,7 +73,7 @@
 
 ## 3. 阶段关闭核对（2026-10-05）
 
-### 3.1 Stage 09 完成标准（`docs/project_stages/09_single_frame_base_benchmark.md` §1）
+### 3.1 Stage 09 完成标准（`docs/stages_plan/09_single_frame_base_benchmark.md` §1）
 
 > "Base-1F 的全量预测、主指标、95% CI、denominator 与资源统计可由固定配置重现。"
 
