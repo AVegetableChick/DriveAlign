@@ -179,6 +179,9 @@ def make_trainer(
         gradient_accumulation_steps=params["gradient_accumulation_steps"],
         learning_rate=params["learning_rate"],
         num_train_epochs=params["num_train_epochs"],
+        # max_steps：>0 时 HF **忽略** num_train_epochs，只跑这么多 optimizer step
+        # （诊断 smoke / 限步验证用）。缺省 -1 = 完全按 epochs 跑，与 S11 行为逐值一致。
+        max_steps=int(params["max_steps"]) if params.get("max_steps") is not None else -1,
         fp16=False,
         bf16=True,
         optim=params["optimizer"],

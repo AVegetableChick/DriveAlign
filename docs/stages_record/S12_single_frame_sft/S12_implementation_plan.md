@@ -82,6 +82,7 @@ git commit -m "[Docs] S12 implementation plan (formal single-frame SFT)"
 
 - train 22,941 anchors ÷ grad-accum 4 → **5,735–5,736 optimizer step / epoch**。
 - 按 S11 实测 ~1.4 s/micro-batch 外推 → **1 epoch ≈ 8.7–9.0 h**（+ 反复读图与编码开销，上界按 ~10 h 排期）。
+  - **实测更正（2026-10-07，Step 3 施工期）**：该外推**高估约 2.1×**。S12 惰性管道实测 **2.59 s/optimizer step**（30-step 全量诊断 smoke：`train_runtime = 77.67 s / 30 step`，读数见 `S12_run.md` §2.6），故 **1 epoch ≈ 5,735 × 2.59 ≈ 4.13 h**。差异来源：S11 的 `HFDataset.from_list` + 行索引把张量列退化成嵌套 list，collator 每 micro-batch 需把 1792×1176 的 list 重转回 tensor（S11_bug_log B5）；S12 惰性 Dataset 直出张量省掉这段。仅更正**估算值**，B 拍板的规模（1 epoch）不变。
 - `warmup_ratio=0.05` → warmup 约 287 step；cosine 在 1 epoch 内走完一遍退火。
 - 候选 ckpt 节奏：`save_steps=500`（≈11 个候选 + 最终），`save_total_limit: null`（adapter 体积小）。**用途 = Step 4 resume 验证取中间 ckpt + 训练中断保险**（不再用于选择 best，§2.3）。
 
@@ -232,7 +233,7 @@ git commit -m "[Docs] S12 implementation plan (formal single-frame SFT)"
 ## 6. 拍板记录（A–J 全部已定；2026-10-07）
 
 - **A.（已拍板 2026-10-07 → 被 E 覆盖）** best 选择路线原定 = 事后 sweep（B1）。E 拍板后**本阶段否决 sweep**，作为备选记录在 §2.3。
-- **B.（已拍板 2026-10-07）** 训练规模 = **1 epoch**（≈8.7–9.0 h）。
+- **B.（已拍板 2026-10-07）** 训练规模 = **1 epoch**（时长估算 `8.7–9.0 h` 经 Step 3 实测更正为 **≈4.13 h**，见 §2.5）。
 - **C.（已拍板 2026-10-07）** 数据管道 = **map-style 惰性 Dataset**（`__getitem__` 内 load + encode）；否决 arrow 落盘缓存。（§2.2）
 - **D.（已拍板 2026-10-07）** 学习率 = **`5.0e-5`**（自 S11 smoke 的 `1e-4` 下调）。理由：`1e-4` 是为 32/128 条过拟合设定；全量 22,941 × 5,735 step 下过大易行为坍缩。（§2.5）
 - **E.（已拍板 2026-10-07，不再复议）** `best := 末点 checkpoint`，只对末点跑**一次全量 val 2,531** 落单点读数。⚠️ **这是对蓝图"best checkpoint 完全由 validation 选择"的有意偏离，已登记、不复议**；候选 adapter 仍全量保留（供 Step 4 resume 验证）（§2.3 / §2.4）。
@@ -249,6 +250,11 @@ git commit -m "[Docs] S12 implementation plan (formal single-frame SFT)"
 > - **原因**：`select` 固定写出 train32/overfit128/train_full 三份 token 列表，而 `serialize` 缺省会处理目录内**实际存在**的全部 → S12 冻结样本目录会混入 S11 的两份 smoke 子集。S12 Step 2 以 `--subsets train_full` 收敛产出，使冻结目录严格等于 §5 登记的 `train_full` 一份。
 > - **性质**：§3 Step 1 文件表的**机制补充**（新增一个可选入参 + 单测 `tests/unit/test_sft_build_samples.py`），不涉及阈值、口径、判据，不改变任何 Gate 定义。
 > - **落位更正（同日，Step 2 收尾）**：B 层序列化训练样本原定 `runs/S12_sft_1f/sft_samples/`，与 A 层（`data/sft_subsets/`）分属两个根，且把训练**输入**与运行**输出**混在 `runs/` 下——清 `runs/` 会把训练集一起删掉。经确认迁至 **`data/sft_samples/v6_1f/`**：与 A 层同处 `data/` 命名空间；`v6_1f` 取该样本的**真实依赖维度**（contract v6 + policy 1F，样本只含 prompt/target 文本，与 `max_pixels` 无关），按 face 而非按阶段命名，S13 沿用同 face 可直接复用。**纯 `mv`、未重打**：`train_full.jsonl` sha `eb84e48e…` 与 `samples_manifest.json` sha `6b98b16e…` 逐字节不变，迁后 G3 复核仍全绿。§3 Step 2 与 §5 的路径已同步更正。
+
+> **施工期补充登记（2026-10-07，Step 3 施工期，不改任何已拍板值与口径）**
+> - `cli/sft_train.py` 新增**可选** `--max-steps`（缺省 `None` = 不进 override，行为与不传时逐值不变）；`sft/train.py:make_trainer` 相应地把 `params["max_steps"]`（缺省 `-1`）透传给 `TrainingArguments.max_steps`。
+> - **原因**：正式全量训练（5,735 step / ~4.1 h）与 S11 smoke 的**单步耗时、峰值显存**出现同配置下的显著差异（速度 2.61 s/opt-step、显存峰值 27.4 GiB），需要一份**同数据规模、只跑少量 step** 的诊断 smoke 来分离"数据规模"与"数据管道"两个变量。`--max-steps` 提供该限步入口，同时兼作 Step 4 resume/限步验证的工具。
+> - **性质**：§3 Step 1/3 文件表的**机制补充**（新增一个可选入参 + 单测 `tests/unit/test_sft_train_cli.py`，钉住"缺省即不变"），不涉及阈值、口径、判据，不改变任何 Gate 定义。**正式全量跑不传该开关**（训练规模仍只由 `sft_1f.yaml` 一份 sha 决定，见 `S12_run.md` §2.0）。
 
 ## 7. 交接（S13）
 

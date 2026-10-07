@@ -14,7 +14,7 @@
 |---|---|---|---|
 | 1 | 代码 + 冻结配置 + 单测（CPU） | 完成 | commit `ba93717` |
 | 2 | train_full 样本冻结（CPU，确定性） | 完成 | commit `f1e60a6`；`runs/S12_sft_1f/reports/step2_freeze.json` |
-| 3 | 全量训练（GPU，tmux） | **待执行** | 本文件 §2 |
+| 3 | 全量训练（GPU，tmux） | **进行中**：诊断 smoke 已完成（§2.6），正式训练待重启 | 本文件 §2 / §2.6 |
 | 4 | save/resume 验证（GPU，新进程） | 未开工 | — |
 | 5 | val 读数 → 冻结 best（GPU） | 未开工 | — |
 | 6 | test 一次性推理（GPU） | 未开工 | — |
@@ -123,6 +123,7 @@ PYTHONPATH=DriveAlign/src python -m drivealign.cli.sft_train \
 |---|---|---|
 | optimizer step | ≈ 5,736 / epoch（22,941 ÷ 4） | §2.5 |
 | 时长 | ≈ 8.7–10 h | §2.5（S11 实测 ~1.4 s/micro-batch 外推） |
+| 时长（**实测更正**） | **≈ 4.13 h**（5,735 × 2.59 s） | 本文件 §2.6；plan §2.5 已同步更正 |
 | 中间 checkpoint | `checkpoint-500 … checkpoint-5500`，共 11 个，每个 ≈344 MB → 约 3.8 GB | §2.5 + S11 实测体积 |
 | 磁盘余量 | 需 ≥ 5 GB（实测可用 196 GB，充裕） | `df -h` |
 | 峰值显存 | 待记（作为 Step 8 资源报告输入） | §3 Step 3 |
@@ -142,6 +143,117 @@ PYTHONPATH=DriveAlign/src python -m drivealign.cli.sft_train \
 - **冻结配置**：`sft_train.main` 校验 `status: frozen`，非冻结配置直接拒绝开跑。
 - **A1（分辨率）**：训练侧 `max_pixels: 360000` 已由冻结配置钉死；评测侧
   `sft_1f_v6.yaml` 同值，由 `test_sft_config_parity.py` 钉住，两端不会漂移。
+
+### 2.6 诊断 smoke（30 step 全量数据；**throwaway，不进 §5 冻结物**）
+
+**动机**：§2.2 全量训练启动后，两项读数与 S11 smoke 对不上——
+
+| 读数 | S11 `smoke128`（`runs/S11_sft_smoke/checkpoints/smoke128/train128.log`） | S12 全量（`runs/S12_sft_1f/reports/step3_train_aborted.log` 前 234 step） |
+|---|---|---|
+| 单步耗时 | 5.47 s/opt-step（525.42 s / 96 step） | **2.60 s/opt-step**（10:08 / 234 step） |
+| 峰值 allocated | 10.14 GiB | 未落档（进程被中断） |
+| 峰值 reserved | 13.90 GiB | 未落档；`nvidia-smi` 稳态 **28,090 MiB**（45 s 内两次采样完全不变 → 不涨） |
+
+两份运行**同配置**（`sft_1f.yaml` 与 `sft_smoke_1f.yaml` diff 仅 4 处训练规模字段）、**同序列长度**
+（train_full 均 1,123 tok vs smoke32 1,070 / smoke128 1,104，1.02–1.05×），故差异不能归因于数据规模。
+处置：停掉全量训练（pid `621013`，跑到 234/5,735、10:08，**尚无 checkpoint 落盘**，`save_steps=500`），
+改跑**同数据规模、只 30 step** 的诊断 smoke，把"数据规模"与"代码路径"两个变量分离。
+
+#### 2.6.1 开训前 pre-flight（真实 collator 取 batch，batch=1 == 训练 micro-batch 口径）
+
+| 项 | 实测 |
+|---|---|
+| `len(dataset)` | 22,941（= train_full 行数，装载完整） |
+| `input_ids` / `labels` / `attention_mask` | `(1, 1314)` int64 |
+| `pixel_values` | `(7168, 1176)` float32 — mean **−0.1087** / std **0.7186** / min **−1.7777** / max **2.1459** |
+| `pixel_values` 全零？ | **否**（非全零、非 garbage，量级与归一化后的图像一致） |
+| `image_grid_thw` | `[[1, 32, 56]]`（32×56 = 1,792 patch/图，与 `max_pixels=360000` 的 448×784 一致） |
+| 监督位数 | 74–380（视目标长度） |
+
+#### 2.6.2 视觉通路判定（同一 batch，仅改视觉输入；batch=1，4 条不同样本）
+
+| 样本 | 真实 | 全零 | 随机噪声 | 删除视觉键 | real==zero | real==noise | real==no_vis |
+|---|---|---|---|---|---|---|---|
+| 0 | 1.725617 | 1.313969 | 1.350558 | 1.322114 | False | False | False |
+| 1 | 1.808458 | 1.314243 | 1.368414 | 1.311629 | False | False | False |
+| 2 | 1.868363 | 1.363640 | 1.401419 | 1.348366 | False | False | False |
+| 3 | 0.980915 | 0.841019 | 0.847233 | 0.837646 | False | False | False |
+
+**结论**：三种扰动（置零 / 换噪声 / 删键）都让 loss 变化 0.14–0.52 nats，**视觉通路正常**，
+`pixel_values` 确实参与前向；不存在"图像被静默忽略、只训文本"的情形。
+
+#### 2.6.3 30-step 全量 smoke 读数
+
+命令（等价 §2.2 + `--max-steps 30`，产物落 `diag/` 与正式训练隔离）：
+
+```bash
+PYTHONPATH=DriveAlign/src python -m drivealign.cli.sft_train \
+  --config DriveAlign/configs/sft/sft_1f.yaml \
+  --samples data/sft_samples/v6_1f/train_full.jsonl \
+  --max-steps 30 \
+  --out runs/S12_sft_1f/diag/smoke30 \
+  --dataroot data/nuscenes/trainval
+```
+
+| 项 | 读数 | 对照 S11 `smoke128` |
+|---|---|---|
+| `global_step` | 30 | 96 |
+| `train_runtime_s` | **77.67**（**2.59 s/opt-step**） | 525.42（5.47 s/opt-step） |
+| `train_loss`（均值） | 0.753 | — |
+| loss 走势（step 10/20/30） | 1.0431 / 0.6409 / 0.5749 | — |
+| `peak_allocated_gib` | **10.15** | 10.14 |
+| `peak_reserved_gib` | **27.12** | 13.90 |
+| `device_total_gib` | 31.48 | — |
+| 生成参照（软层） | `speed_action=KEEP_SPEED`、`yield_required=false`、80 out-tok | — |
+
+**关键点：全量数据下的单步耗时（2.59 s）与全量训练实测（2.60 s）逐值复现** → 耗时是**代码路径**的
+属性，与数据规模无关，可外推 1 epoch ≈ 4.13 h。
+
+#### 2.6.4 显存"翻倍"的归因：allocated 未变，变的是分配器预留池（碎片）
+
+| 口径 | `peak_allocated_gib` | `peak_reserved_gib` |
+|---|---|---|
+| S11 `smoke128`（默认分配器） | 10.14 | 13.90 |
+| S12 `diag/smoke30`（默认分配器） | **10.15** | **27.12** |
+| S12 `diag/smoke30_expseg`（`PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`） | 10.04 | **10.80** |
+
+**结论**：
+
+1. **真实张量占用没有变化**（10.14 → 10.15 GiB，±0.01）。`nvidia-smi` 报的 28.1 GiB 是
+   **reserved**（分配器预留池，含碎片），不是活动张量。
+2. 预留池翻倍源于**碎片化**：惰性管道每步现取现编码，序列长度（1,008–1,314）与各步 buffer
+   尺寸逐步变化，caching allocator 难以复用，池子被撑大。**决定性证据**是
+   `expandable_segments:True` 下 reserved 掉回 **10.80 GiB**（−60%）。
+3. 该池**不增长**（45 s 内两次采样恒为 28,090 MiB），`allocated` 距卡上限 31.48 GiB 尚有 **21 GiB** 余量
+   → **无 OOM 风险**，不是缺陷、不影响正式训练。
+4. 若想让 `nvidia-smi` 数字好看/给同卡部署其他任务留空间，可在正式训练前加
+   `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`（可选优化，非必需）。
+
+#### 2.6.5 耗时"减半"的归因
+
+S11 的装载路径是 `HFDataset.from_list` 全量预编码；HF Dataset 的**行索引会把张量列退化成嵌套
+`list`**（S11_bug_log B5），collator 每 micro-batch 需用 `torch.as_tensor` 把 1792×1176 的嵌套
+list 重转回张量（默认 `num_workers=0`，**串行、GPU 空转**）。CPU 微基准（本机实测）：
+
+| 操作 | 耗时 / micro-batch |
+|---|---|
+| 嵌套 list → tensor（2,107,392 元素） | **321.3 ms** |
+| 已是 tensor → tensor（短路） | 0.001 ms |
+| 差值 × 4（accum=4） | **1.285 s / opt-step** |
+
+S12 惰性 Dataset 直出张量省掉这段 → 可解释 2.88 s 差距中的约 1.29 s（45%）；其余约 1.6 s 属
+HF Dataset 逐行 arrow↔Python 的其他开销，**未做逐项实测**（该路径已被 Step 1 的改动移除，
+重建 A/B 不划算）。**属正当加速的副产品，不是异常**。
+
+**产物**（throwaway，Step 8 不入 §5 冻结物）：
+`runs/S12_sft_1f/reports/diag_smoke30.log`、`runs/S12_sft_1f/reports/diag_smoke30_expseg.log`、
+`runs/S12_sft_1f/reports/step3_train_aborted.log`（被中断那次的 234 step 原始日志，重启前改名留档，
+否则会被 §2.2 的 `tee` 覆盖）、
+`runs/S12_sft_1f/diag/smoke30/`、`runs/S12_sft_1f/diag/smoke30_expseg/`。
+
+**结论**：两项异常均**不是缺陷**。正式全量训练可重启（§2.2 命令原样，**不要**加 `--max-steps`），
+预期待落档：`global_step=5,736`、`train_runtime ≈ 4.13 h`、`peak_allocated ≈ 10.2 GiB`、
+`peak_reserved ≈ 27 GiB`。
 
 ---
 
@@ -176,3 +288,15 @@ PYTHONPATH=DriveAlign/src python -m drivealign.cli.sft_train \
 **已知偏离（§4，非 FAIL）**：阶段关闭时按"**接受偏离**"记录；§6-J 已关闭，不复议。
 
 **待 Step 8 复述**：上述两段须在 `S12_decision_log.md` 中再次原样声明，并在 S13 交接说明中复述。
+
+**Step 6b 附加登记（2026-10-07，batched_v1 path，另开面不影响上述冻结登记）**：
+
+- 批量推理另开独立 path：`configs/benchmark/sft_1f_v6_batched.yaml`（sha `defba3c5…`，
+  `batch_size: 16` 由配置承载、CLI 不覆盖）+ `batch_benchmark` CLI + `runs/S12_sft_1f/eval_v6_batched/`
+  独立输出；**parity gate 经拍板延后**，该面读数一律标注"**待 parity 复核**"
+  （bs=1 参照面 `eval_v6/` 于 164 行中断，待 `--resume` 续跑后做 CPU diff）。
+  注：yaml 于 2026-10-07c 依会话记录重建（撤销事故），注释措辞略异、字段值一致，
+  重建前 sha 为 `358b3aa5…`（见 run_summary 登记与 yaml 变更记录）。
+- Bug 台账：[S12_bug_log.md](S12_bug_log.md)（B1 批量静默退化 bs=1 的双层故障链、B2 manifest 面误用被守卫拦截）。
+- 速度记录：[S12_batched_inference_speed.md](S12_batched_inference_speed.md)
+  （bs∈{1,2,4,8,16,32} 同批扫描，bs=16 定档 3.48×，GPU 利用率近饱和佐证）。

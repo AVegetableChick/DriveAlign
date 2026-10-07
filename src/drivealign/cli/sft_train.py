@@ -63,6 +63,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     # S12 §3 Step 1 新增：训练规模覆盖（不改冻结配置即可覆盖单次运行）。
     parser.add_argument("--epochs", type=int, default=None, help="override num_train_epochs")
     parser.add_argument(
+        "--max-steps",
+        type=int,
+        default=None,
+        help=(
+            "override max_steps（>0 时 HF 忽略 num_train_epochs）。"
+            "只服务于诊断 smoke / Step 4 的限步验证，正式全量跑不要传。"
+        ),
+    )
+    parser.add_argument(
         "--save-steps",
         type=int,
         default=None,
@@ -74,6 +83,26 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="resume training from a checkpoint dir (S12 §2.9 / Step 4)",
     )
     return parser.parse_args(argv)
+
+
+def _build_params_override(args: argparse.Namespace) -> dict | None:
+    """把 CLI 覆盖开关转成 `train(params_override=...)` 的字典。
+
+    口径：只有**显式给了**的开关才进 override，未给的字段完全走冻结配置的值
+    （全为 None 时返回 None，`make_trainer` 因此拿到与原行为逐值一致的参数）。
+    抽成独立函数是为了让"缺省即不变"这条口径可在 CPU 上单测（见
+    `tests/unit/test_sft_train_cli.py`），不必起 GPU 或加载模型。
+    """
+    override = {
+        key: value
+        for key, value in (
+            ("num_train_epochs", args.epochs),
+            ("max_steps", args.max_steps),
+            ("save_steps", args.save_steps),
+        )
+        if value is not None
+    }
+    return override or None
 
 
 def _load_dataset(samples_path: Path, dataroot: Path, processor):
@@ -110,14 +139,7 @@ def main(argv: list[str] | None = None) -> int:
     dataset = _load_dataset(Path(args.samples), Path(args.dataroot), loaded.processor)
 
     # CLI 显式覆盖（只在给了参数时才进 override，否则完全走冻结配置的值）。
-    params_override = {
-        key: value
-        for key, value in (
-            ("num_train_epochs", args.epochs),
-            ("save_steps", args.save_steps),
-        )
-        if value is not None
-    }
+    params_override = _build_params_override(args)
 
     # 在训练前重置高水位线：之后的峰值 = 模型常驻权重 + 训练激活/梯度（正是要落档的口径）。
     if torch.cuda.is_available():
