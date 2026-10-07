@@ -1,0 +1,71 @@
+# S12 Step 6b - SFT-1F 的 v6 面 test 批量推理配置（batched_v1 path）
+#
+# 定位：S09 备案（docs/stages_record/S09_base_benchmark/S09_inference_acceleration.md）
+# 第 1 路线"batch 推理"的落地配置。**冻结面 `sft_1f_v6.yaml` 不动**，本文件
+# 是独立预注册面：除下述两处新增字段外，逐字段复制 `sft_1f_v6.yaml`
+#（其 sha256 已登记），保证 adapter / 分辨率 / 解码口径与冻结面完全同源。
+#
+# 新增字段（相对 sft_1f_v6.yaml）：
+#   1. `runner: batched_v1`：批量推理 path 标记（`inference/batched_runner.py` +
+#      `cli/batch_benchmark.py`）；
+#   2. `batch_size: 16`：批大小定档依据（S12_batched_inference_speed.md）：
+#      bs=16 实测 3.48× vs bs=1（全量外推 ~4.3h），峰值显存 12.3GB（32GB 卡
+#      余量充足），GPU 利用率已近饱和（bs=32 仅再 +13%）；批大小由配置承载，
+#      CLI 不再覆盖。
+#
+# ⚠️ parity gate（与冻结面 bs=1 输出逐值 diff）延后执行（2026-10-07 拍板：
+# 时间优先），两份全量 JSONL 就绪后可在 CPU 层事后补跑；在此之前本面读数
+# 须标注"待 parity 复核"，不得与冻结面读数混用。
+#
+# 冻结要旨（与 sft_1f_v6 完全一致的部分）：
+#   - policy=1F、split=test、greedy 解码（do_sample=false / temperature=0.0 /
+#     max_new_tokens=512）、dtype=bfloat16、seed=0、speed_line_precision=3。
+#   - contract_version=v6；adapter 指向同一 best 目录。
+#   - 输出约定：`runs/S12_sft_1f/eval_v6_batched/`（CLI --out 指定），
+#     严禁写冻结面的 predictions 文件名。
+
+status: frozen
+run_name: sft_1f_v6_batched
+runner: batched_v1
+batch_size: 16
+split: test
+input_policy: 1F
+contract_version: v6
+image_transform: null
+
+# SFT adapter 目录：指向训练结束落盘的末点 adapter（`checkpoints/sft_1f/`），
+# 与正在跑的冻结面 eval_v6 实际加载源同目录（`best/` 目录尚未建立；
+# --adapter 可运行时覆盖）。
+adapter_path: runs/S12_sft_1f/checkpoints/sft_1f
+
+model:
+  path: /root/autodl-tmp/drivealign_workspace/models/Qwen2.5-VL-3B-Instruct
+  revision: null
+  dtype: bfloat16
+  device_map: auto
+  attn_implementation: flash_attention_2
+  processor:
+    use_fast: true
+    # A1：与训练侧同值（见 configs/sft/sft_1f.yaml）。
+    max_pixels: 360000
+
+runtime:
+  local_files_only: true
+
+generation:
+  do_sample: false
+  temperature: 0.0
+  max_new_tokens: 512
+
+speed_line_precision: 3
+seed: 0
+
+# ----------------------------------------------------------------------------
+# 变更记录：
+#   2026-10-07   初版：bs=8（当时设计为 CLI --batch-size 可覆盖）。
+#   2026-10-07b  batch_size 8→16 定档（依据 S12_batched_inference_speed.md）；
+#                批大小改由配置承载，CLI 不再覆盖。
+#   2026-10-07c  依会话记录重建（编辑器误撤销回退到 bs=8 旧版后恢复）；
+#                注释措辞可能与 2026-10-07b 版略有出入，字段值一致，
+#                sha256 以本版为准并同步登记。
+# ----------------------------------------------------------------------------
