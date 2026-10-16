@@ -42,6 +42,19 @@ def _tau_key(tau: float) -> str:
     return f"{tau:g}"
 
 
+def _risk_names(entries: Any) -> list[str]:
+    """risk_factors 条目 → 因子名列表（S13 V7-A1 双形状兼容）。
+
+    v6- 的 GT/预测侧条目是裸因子名字符串；v7+ 条目是归因对象
+    ``{factor, objects}``。评分口径保持"因子名集合"不变（factor-level
+    P/R 增补属 eval 增补稿），这里只负责把两种形状统一提取成名字。
+    """
+    return [
+        entry["factor"] if isinstance(entry, Mapping) else str(entry)
+        for entry in (entries or [])
+    ]
+
+
 # ---------------------------------------------------------------------------
 # per-anchor scoring
 # ---------------------------------------------------------------------------
@@ -116,8 +129,8 @@ def score_anchor(
         "pred_yield_required": bool(pred.get("yield_required")),
         "gt_speed_action": str(gt_output.get("speed_action")),
         "pred_speed_action": str(pred.get("speed_action")),
-        "gt_risk_factors": sorted(set(gt_output.get("risk_factors", []))),
-        "pred_risk_factors": sorted(set(pred.get("risk_factors", []))),
+        "gt_risk_factors": sorted(set(_risk_names(gt_output.get("risk_factors")))),
+        "pred_risk_factors": sorted(set(_risk_names(pred.get("risk_factors")))),
         "n_pred_objects": len(pred_objects),
         "n_gt_objects": len(gt_objects),
         "max_items_hit": len(pred_objects) == max_items,

@@ -1,0 +1,66 @@
+# Stage 13 Eval v3 evaluation configuration (provisional).
+#
+# 修订基准：eval_v2（configs/evaluation/eval_v2.yaml，status: frozen
+# 2026-10-09，byte-frozen 不动）。本文件是 eval v3 指标新增草案的机器版：
+# docs/stages_record/S13_contract_and_eval_revision/S13_eval_v3_metric_additions_draft.md
+# （拍板定稿 2026-10-14）。全部新增键（BEV 误差族 49 标量 + risk 归因族
+# 2 标量 + per_factor 嵌套块 = 51 标量 + 1 嵌套块，2026-10-14 用户裁定
+# 按 §5 清单枚举钉死，草案文字「50」为算术勘误）由 metrics_bev.py /
+# metrics_attribution.py / evaluator_v3.py 承载，不在 config 中登记
+# （v2 先例）。
+#
+# 与 eval_v2.yaml 的差异（共 2 处，其余字段逐值相同）：
+#   1. eval_version: eval_v3；status 在正式报告前保持 provisional，
+#      冻结时置 frozen 并将当期 sha256 登记进 eval 台账 v2→v3 段。
+#   2. taxonomies.risk_factors 换用 contract v7 词表（6 枚举，顺序 =
+#      configs/contracts/v7/risk_taxonomy.json canonical 顺序）——v7
+#      记录四字段 GT + v6 词表不可混用（代际红线），词表与 v7 契约
+#      pin 测试同源（import 契约资产校验，防漂移）。
+#
+# 不变量（草案 §1）：matching 网格 [0.3, 0.5, 0.7] 主阈值 0.5、
+# bootstrap 三参数（S09 预注册值，改动即失去与 v1/v2 报告 CI 可比性）、
+# counterfactual battery（首版不加 BEV/归因读数，§6-5 维持默认）、
+# max_items / risk_max_items 8/8、不设 gate_thresholds、
+# evaluation_split: test 全部沿用 v2 冻结值。
+
+status: frozen  # 2026-10-15 冻结（base v7 eval v3 定稿报告口径）；sha256 登记 eval 台账 v2→v3 段
+eval_version: eval_v3
+evaluation_split: test
+
+matching:
+  iou_thresholds: [0.3, 0.5, 0.7]
+  primary_iou_threshold: 0.5
+
+taxonomies:
+  motion_states: [stationary, same_direction, oncoming, crossing]
+  speed_actions: [ACCELERATE, KEEP_SPEED, DECELERATE, STOP]
+  risk_factors:
+    - vru_crossing
+    - vehicle_crossing
+    - lead_vehicle_braking
+    - stationary_obstacle
+    - object_near
+    - oncoming_traffic
+  categories:
+    - car
+    - truck
+    - construction_vehicle
+    - bus
+    - trailer
+    - barrier
+    - motorcycle
+    - bicycle
+    - pedestrian
+    - traffic_cone
+
+max_items: 8
+risk_max_items: 8
+
+bootstrap:
+  n_resamples: 2000
+  seed: 20261003
+  confidence_level: 0.95
+
+counterfactual:
+  subset_size: 200
+  transforms: [blank, shuffled]

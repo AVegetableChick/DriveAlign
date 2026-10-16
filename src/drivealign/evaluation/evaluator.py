@@ -20,7 +20,7 @@ Example launch command:
     ``conda activate autovla_codeclean && cd /root/autodl-tmp/drivealign_workspace && \
     PYTHONPATH=DriveAlign/src python -m drivealign.cli.evaluate \
     --predictions runs/S09_base_benchmark/predictions.jsonl \
-    --anchor-manifest data/dataset_v4/anchor_policy_manifest.json \
+    --anchor-manifest data/face_manifests/v6/anchor_policy_manifest.json \
     --dataset-root data/dataset_v4 \
     --config DriveAlign/configs/evaluation/eval_v1.yaml \
     --out runs/S09_base_benchmark``

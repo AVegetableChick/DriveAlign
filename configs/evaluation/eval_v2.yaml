@@ -1,0 +1,65 @@
+# Stage 13 Eval v2 evaluation configuration (provisional).
+#
+# 修订基准：eval_v1（configs/evaluation/eval_v1.yaml，status: frozen，
+# sha256 e6690f6fe950a1d1accdae3286dadbf6a1fad6cb503e3b8fe04ff22bbcf91f2d，
+# 冻结于 2026-10-05）。本文件是 S13 Step 1 口径变更台账的机器版；全部
+# 变更条目的登记与解释见
+# docs/stages_record/S13_contract_and_eval_revision/S13_eval_v1_to_v2_metric_changes.md
+#
+# 与 eval_v1.yaml 的差异（共 3 处，其余字段逐值相同）：
+#   1. eval_version: eval_v2；status 在正式报告前保持 provisional，
+#      冻结时置 frozen 并将当期 sha256 登记进台账 §9。
+#   2. 新增 risk_max_items: 8 —— risk 基数直方图的封顶来源是
+#      contract v6 契约 risk_factors 的 maxItems（8），与 critical_objects
+#      的 max_items 出处不同，分开设键保证可追溯。
+#   3. 不设 gate_thresholds 块（2026-10-09 裁定：v2 取消 gate 机制，
+#      报告不含 PASS/FAIL 判定；T6 完整性硬前置在 evaluator 层执行，
+#      属不变性校验而非阈值 gate）。
+#
+# 指标键集的增删改（T1-T6 及新增块）由 metrics_v2.py / evaluator_v2.py
+# 承载，不在 config 中登记；四组冻结枚举由单测与 contract v6 逐值钉死
+# （pin 测试随 Step 6 落地）。bootstrap 三参数为 S09 预注册值延续，
+# 不得改动，否则与 v1 报告的 CI 失去可比性。
+
+status: frozen  # 2026-10-09 冻结；冻结前 provisional sha256 f5e64dbf8c3efbd74360fdd487d05db2e83821eec1474a6a9b2a9dbc3cea7ecf
+eval_version: eval_v2
+evaluation_split: test
+
+matching:
+  iou_thresholds: [0.3, 0.5, 0.7]
+  primary_iou_threshold: 0.5
+
+taxonomies:
+  motion_states: [stationary, same_direction, oncoming, crossing]
+  speed_actions: [ACCELERATE, KEEP_SPEED, DECELERATE, STOP]
+  risk_factors:
+    - pedestrian_crossing
+    - vehicle_merging
+    - lead_vehicle_braking
+    - corridor_conflict
+    - stationary_obstacle
+    - congestion
+    - oncoming_traffic
+  categories:
+    - car
+    - truck
+    - construction_vehicle
+    - bus
+    - trailer
+    - barrier
+    - motorcycle
+    - bicycle
+    - pedestrian
+    - traffic_cone
+
+max_items: 8
+risk_max_items: 8
+
+bootstrap:
+  n_resamples: 2000
+  seed: 20261003
+  confidence_level: 0.95
+
+counterfactual:
+  subset_size: 200
+  transforms: [blank, shuffled]
