@@ -55,20 +55,20 @@ from drivealign.data.nuscenes_io import load_nuscenes
 from drivealign.dataset.build_dataset import load_scene_manifest, scene_keyframes
 from drivealign.evaluation.projection import project_box
 from drivealign.gt.backfill import NUM_FUTURE_FRAMES, collect_anchor_evidence
-from drivealign.gt.config import PoolConfig, RuleConfig, canonical_category, load_rule_config
-from drivealign.gt.observability import UNSCORABLE, classify_observability
-from drivealign.gt.pool import (
+from drivealign.gt.legacy_v4 import (
     MAX_POOL_SIZE,
-    PoolCandidate,
-    azimuth_deg_from_center,
-    select_objects,
-)
-from drivealign.gt.risk import (
     EgoState,
     ObjectState,
+    PoolCandidate,
+    PoolConfig,
+    RuleConfig,
     corridor_conflict,
     corridor_distance_curve,
+    load_v4_rule_config,
+    select_objects,
 )
+from drivealign.gt.observability import UNSCORABLE, classify_observability
+from drivealign.gt.pool import azimuth_deg_from_center
 
 DEFAULT_MANIFESTS = "data/dataset_v1"
 DEFAULT_OUT = "runs/S08_gt_backfill"
@@ -236,6 +236,11 @@ def _process_anchor(
             velocity_y_mps=c.velocity_y_mps,
             distance_m=c.distance_m,
             azimuth_deg=c.azimuth_deg,
+            # v4 走廊曲线只消费中心点运动学；box 几何是 v7 firing 引擎的
+            # 必填字段，这里填 0.0 占位（不影响 v4 语义）。
+            box_length_m=0.0,
+            box_width_m=0.0,
+            box_yaw_ego_deg=0.0,
         )
 
     def _fires(o: ObjectState) -> Optional[str]:
@@ -399,7 +404,9 @@ def _write_report(
 
 def main(argv: Optional[List[str]] = None) -> int:
     args = _parse_args(argv)
-    config = load_rule_config()
+    # v4 冻结复现层：本 CLI 的历史结论建立在 v4 规则上，显式加载 v4 配置
+    # （v7 迁移后 gt.config 默认已是 v7，见 drivealign.gt.legacy_v4）。
+    config = load_v4_rule_config()
     manifest_path = args.scene_manifests.expanduser() / "train_scene_manifest.json"
     scene_tokens, fingerprint = load_scene_manifest(manifest_path)
     if args.max_scenes is not None:

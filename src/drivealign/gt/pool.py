@@ -7,7 +7,9 @@ Purpose:
 
     1. forward cone: |azimuth| <= ``cone_half_angle_deg`` (azimuth around the
        CAM_FRONT optical axis, the practical proxy for the ego heading) AND
-       distance < the class-group cone range;
+       distance < the category's effective cone range (v7: the per-class
+       override first — bicycle/motorcycle keep 45 m — else the class-group
+       value, vru 30 / vehicle 45 / static 15 m);
     2. OR omnidirectional proximity disc: distance < ``proximity_disc_radius_m``
        regardless of azimuth. The disc never pulls in gate survivors that the
        cone rejects at long range — it only waives the ANGLE restriction for
@@ -46,6 +48,10 @@ class PoolCandidate:
     ``azimuth_deg`` is the planar angle around the CAM_FRONT optical axis
     (0 = straight ahead, positive to the right) computed from the sensor-
     frame box center; ``distance_m`` is the 3D norm of that center.
+
+    v7 新增 box 几何三字段（firing 引擎的支撑函数需要标注盒的
+    L / W / 朝向）：``box_yaw_ego_deg`` 是标注盒朝向在 ego 系下的平面角
+    （度，与 ego 航向之差），由采集层用全局 yaw 减 ego yaw 填入。
     """
 
     ann_token: str
@@ -60,6 +66,10 @@ class PoolCandidate:
     global_y: float = 0.0
     velocity_x_mps: float = 0.0
     velocity_y_mps: float = 0.0
+    # v7: annotation box geometry (firing support-function inputs).
+    box_length_m: float = 0.0
+    box_width_m: float = 0.0
+    box_yaw_ego_deg: float = 0.0
 
     @property
     def speed_mps(self) -> float:
@@ -76,10 +86,12 @@ def select_objects(
     for cand in candidates:
         if cand.visibility_state not in (OBSERVABLE, INFERABLE):
             continue
-        group = pool_config.group_of(cand.category)
+        # v7：有效锥距 = per-class 覆盖优先（bicycle/motorcycle 保持 45 m），
+        # 否则回落到三组组值（vru 30 / vehicle 45 / static 15）。
+        cone_range = pool_config.cone_range_for(cand.category)
         in_cone = (
             abs(cand.azimuth_deg) <= cone_half
-            and cand.distance_m < pool_config.cone_range_by_group_m[group]
+            and cand.distance_m < cone_range
         )
         in_disc = cand.distance_m < disc
         if in_cone or in_disc:
@@ -98,10 +110,10 @@ def truncated_count(candidates: Sequence[PoolCandidate], pool_config: PoolConfig
     for cand in candidates:
         if cand.visibility_state not in (OBSERVABLE, INFERABLE):
             continue
-        group = pool_config.group_of(cand.category)
+        cone_range = pool_config.cone_range_for(cand.category)
         in_cone = (
             abs(cand.azimuth_deg) <= cone_half
-            and cand.distance_m < pool_config.cone_range_by_group_m[group]
+            and cand.distance_m < cone_range
         )
         if in_cone or cand.distance_m < disc:
             n += 1

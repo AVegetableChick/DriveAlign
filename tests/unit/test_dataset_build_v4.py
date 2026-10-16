@@ -1,13 +1,15 @@
-"""Unit tests for the S08 v4 build backfill and the v3<->v4 parity check.
+"""Unit tests for the S08 build backfill and the v3<->v4 parity check.
 
 Purpose:
-    Freeze the Step 3 mechanics: ``GtAssets`` loads the frozen rule set,
-    ``_backfill_record`` fills the five S08 fields on a real v1.0-mini
-    anchor deterministically, ``build_split`` writes shards whose every
-    valid line carries a GT-filled record (quarantined ones keep None) and
-    passes the roundtrip verifier, and the parity CLI gates v3<->v4 anchor
-    identity on a synthetic asset pair (subset/split/request-hash/GT/
-    generation-change/placement) before the real-data smoke run.
+    Freeze the Step 3 mechanics: ``GtAssets`` loads the DEFAULT contract's
+    rule set (v7 since S13 — frozen by the S13 Stage C on 2026-10-12;
+    the CLI entry hard-gates on ``frozen``), ``_backfill_record`` fills the
+    FOUR v7 contract fields on a real v1.0-mini anchor deterministically,
+    ``build_split`` writes shards whose every valid line carries a
+    GT-filled record (quarantined ones keep None) and passes the roundtrip
+    verifier, and the parity CLI gates v3<->v4 anchor identity on a
+    synthetic asset pair (subset/split/request-hash/GT/generation-change/
+    placement) before the real-data smoke run.
 
 Startup command:
     ``conda activate autovla_codeclean && PYTHONPATH=DriveAlign/src python -m \
@@ -33,7 +35,6 @@ from drivealign.dataset.build_dataset import (
     build_split,
     verify_shard_roundtrip,
 )
-from drivealign.gt.config import load_rule_config
 from drivealign.records.adapter import build_record
 from drivealign.records.record import DriveAlignRecord
 
@@ -43,12 +44,13 @@ MINI_ROOT = Path(__file__).resolve().parents[3] / "data" / "nuscenes" / "mini"
 # --- GtAssets ----------------------------------------------------------------
 
 
-def test_gt_assets_load_frozen_rules():
+def test_gt_assets_load_default_contract_rules():
     gt = GtAssets.load()
+    # v7 规则已于 2026-10-12 随 Stage C 冻结（gt_rule_config status=frozen）；
+    # 冻结硬门槛在 CLI main（build_dataset.main），不在 GtAssets / build_split。
     assert gt.rule_config.status == "frozen"
-    assert gt.rule_config.contract_version == "v4"
+    assert gt.rule_config.contract_version == "v7"
     assert len(gt.rule_config_sha256) == 64
-    assert gt.templates["segments"] and gt.phrase_map
 
 
 # --- backfill on real mini (skipped when absent) ------------------------------
@@ -65,7 +67,7 @@ def _first_mini_anchor(nusc):
 
 
 @pytest.mark.skipif(not MINI_ROOT.is_dir(), reason="mini dataroot not present")
-def test_backfill_record_fills_five_fields_and_is_deterministic(tmp_path):
+def test_backfill_record_fills_four_fields_and_is_deterministic():
     from drivealign.data.nuscenes_io import load_nuscenes
 
     nusc = load_nuscenes(MINI_ROOT)
@@ -77,17 +79,22 @@ def test_backfill_record_fills_five_fields_and_is_deterministic(tmp_path):
     record = _backfill_record(nusc, result.record, gt)
     expected = record.training_targets.expected_output
     assert expected is not None
+    # V7-C1：四字段契约（reasoning 已随渲染链退役）。
     assert set(expected) == {
         "critical_objects",
         "risk_factors",
-        "reasoning",
         "yield_required",
         "speed_action",
     }
     assert len(expected["critical_objects"]) <= 8
     assert expected["speed_action"] in {"STOP", "DECELERATE", "ACCELERATE", "KEEP_SPEED"}
     assert isinstance(expected["yield_required"], bool)
-    assert len(expected["reasoning"]) >= 1
+    for idx, obj in enumerate(expected["critical_objects"]):
+        assert set(obj) == {
+            "id", "category", "bbox_2d", "motion_state", "bev_x", "bev_y"
+        }
+        # V7-A1：GT 侧 id = 池序下标，确定性分配。
+        assert obj["id"] == idx
     # language_reference stays closed (DriveLM enhancement package is off).
     assert record.training_targets.language_reference is None
 
@@ -104,7 +111,7 @@ def test_build_split_writes_gt_filled_shards(tmp_path):
     gt = GtAssets.load()
     scene_token = nusc.scene[0]["token"]
     gt_stats = GtDistribution()
-    stats, quarantine, index = build_split(
+    stats, _, index = build_split(
         nusc, "train", [scene_token], tmp_path, "deadbeef", gt, gt_stats=gt_stats
     )
     assert stats["valid_count"] >= 1
@@ -114,18 +121,18 @@ def test_build_split_writes_gt_filled_shards(tmp_path):
     assert gt_stats.frames == stats["backfilled_count"]
     assert sum(gt_stats.speed_action.values()) == stats["backfilled_count"]
 
-    for token, entry in index.items():
+    for entry in index.values():
         line = (tmp_path / entry["shard"]).read_text(encoding="utf-8").splitlines()[
             entry["line"]
         ]
         assert hashlib.sha256(line.encode("utf-8")).hexdigest() == entry["record_hash"]
         record_dict = json.loads(line)
         expected = record_dict["training_targets"]["expected_output"]
-        assert isinstance(expected, dict) and len(expected) == 5
+        assert isinstance(expected, dict) and len(expected) == 4
         # provenance carries the record-side contract version; the builder
-        # stamps DEFAULT_CONTRACT_VERSION at build time (v6 since S11; the
+        # stamps DEFAULT_CONTRACT_VERSION at build time (v7 since S13; the
         # frozen dataset_v4 assets keep their v4 provenance)...
-        assert record_dict["provenance"]["contract_version"] == "v6"
+        assert record_dict["provenance"]["contract_version"] == "v7"
 
     per_split = {
         "train": {
@@ -206,7 +213,6 @@ def test_evaluate_parity_each_gate_failure_flips():
 GT_SAMPLE = {
     "critical_objects": [],
     "risk_factors": [],
-    "reasoning": "The road ahead is clear.",
     "yield_required": False,
     "speed_action": "KEEP_SPEED",
 }
@@ -393,15 +399,24 @@ def _eo(
     risks=(),
     yield_required=False,
     speed_action="KEEP_SPEED",
-    reasoning="r" * 10,
 ):
+    """v7 归因形状（V7-A1）的 expected_output 夹具：risk_factors 条目是
+    ``{factor, objects}``，objects 按条目序指向池内对象 id（分布统计只看
+    factor 名，id 仅保证形状合法且确定性）。"""
     return {
         "critical_objects": [
-            {"category": c, "bbox_2d": [1.0, 2.0, 3.0, 4.0], "motion_state": m}
-            for c, m in objects
+            {
+                "id": idx,
+                "category": c,
+                "bbox_2d": [1.0, 2.0, 3.0, 4.0],
+                "motion_state": m,
+            }
+            for idx, (c, m) in enumerate(objects)
         ],
-        "risk_factors": list(risks),
-        "reasoning": reasoning,
+        "risk_factors": [
+            {"factor": factor, "objects": [idx]}
+            for idx, factor in enumerate(risks)
+        ],
         "yield_required": yield_required,
         "speed_action": speed_action,
     }
@@ -412,18 +427,18 @@ def test_gt_distribution_counts_synthetic_and_deterministic():
 
     stats = GtDistribution()
     stats.update(_eo(objects=(("car", "stationary"), ("car", "crossing")),
-                     risks=("pedestrian_crossing", "congestion"),
-                     yield_required=True, speed_action="STOP", reasoning="abcd"))
+                     risks=("vru_crossing", "lead_vehicle_braking"),
+                     yield_required=True, speed_action="STOP"))
     stats.update(_eo(objects=()))  # empty scene: no objects, no risks
     payload = stats.to_payload()
 
     assert payload["frames"] == 2
     assert payload["speed_action"] == {"ACCELERATE": 0, "DECELERATE": 0, "KEEP_SPEED": 1, "STOP": 1}
     assert payload["yield_required"] == {"false": 1, "true": 1}
-    assert payload["risk_terms"]["pedestrian_crossing"] == 1
-    assert payload["risk_terms"]["corridor_conflict"] == 0  # zero rows stay visible
+    assert payload["risk_terms"]["vru_crossing"] == 1
+    assert payload["risk_terms"]["stationary_obstacle"] == 0  # zero rows stay visible
     assert payload["risk_frames"] == {
-        "0": 1, "1": 0, "2": 1, "3": 0, "4": 0, "5": 0, "6": 0, "7": 0
+        "0": 1, "1": 0, "2": 1, "3": 0, "4": 0, "5": 0, "6": 0
     }
     assert payload["categories"]["car"] == 2 and payload["categories"]["bus"] == 0
     assert payload["motion_states"]["crossing"] == 1 and payload["motion_states"]["oncoming"] == 0
@@ -432,13 +447,12 @@ def test_gt_distribution_counts_synthetic_and_deterministic():
         "0": 1, "1": 0, "2": 1, "3": 0, "4": 0, "5": 0, "6": 0, "7": 0, "8": 0
     }
     assert payload["total_objects"] == 2
-    assert payload["reasoning_length"]["mean"] == 7.0
     assert payload["speed_action_x_yield"]["STOP"] == {"false": 0, "true": 1}
 
     again = GtDistribution()
     again.update(_eo(objects=(("car", "stationary"), ("car", "crossing")),
-                     risks=("pedestrian_crossing", "congestion"),
-                     yield_required=True, speed_action="STOP", reasoning="abcd"))
+                     risks=("vru_crossing", "lead_vehicle_braking"),
+                     yield_required=True, speed_action="STOP"))
     again.update(_eo(objects=()))
     assert again.to_payload() == payload  # deterministic
 
@@ -447,7 +461,7 @@ def test_gt_distribution_merge_sums_and_cross_tab():
     from drivealign.dataset.gt_distribution import GtDistribution
 
     a, b = GtDistribution(), GtDistribution()
-    a.update(_eo(speed_action="STOP", yield_required=True, risks=("corridor_conflict",)))
+    a.update(_eo(speed_action="STOP", yield_required=True, risks=("vru_crossing",)))
     b.update(_eo(speed_action="STOP", yield_required=False))
     b.update(_eo(speed_action="KEEP_SPEED"))
     total = GtDistribution()
@@ -475,19 +489,18 @@ def test_render_gt_distribution_markdown_tables():
             merged.update(_eo(speed_action="STOP", yield_required=True))
     per_split["all"] = merged.to_payload()
 
-    md = render_gt_distribution_markdown(per_split, {"contract_version": "v4"})
-    assert md.startswith("# S08 v4 GT distribution report")
+    md = render_gt_distribution_markdown(per_split, {"contract_version": "v7"})
+    assert md.startswith("# S13 v7 GT distribution report")
     for section in (
         "## speed_action",
         "## yield_required",
-        "## risk_factors",
+        "## risk_factors (unique per frame: count == frames)",
         "## critical_objects: category",
         "## critical_objects: motion_state",
         "## critical_objects: category x motion_state (all)",
-        "## objects per frame",
+        "## objects per frame (critical_objects maxItems=8)",
         "## speed_action x yield_required (all)",
-        "## reasoning length (chars)",
     ):
         assert section in md, section
     assert "| STOP | 2 (100.0%) | 1 (100.0%) | 3 (100.0%) |" in md
-    assert "| pedestrian_crossing | 0 (0.0%) | 0 (0.0%) | 0 (0.0%) |" in md
+    assert "| stationary_obstacle | 0 (0.0%) | 0 (0.0%) | 0 (0.0%) |" in md

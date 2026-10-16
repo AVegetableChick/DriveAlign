@@ -15,8 +15,8 @@ Purpose:
        contract (v4 inherits the v3 model face verbatim), so any difference
        here means the model face drifted;
     3. GT presence (HARD): every compared v4 valid record carries a
-       non-empty ``training_targets.expected_output`` with the five S08
-       fields;
+       non-empty ``training_targets.expected_output`` with the four v7
+       contract fields (V7-C1: reasoning retired);
     4. record-hash generation change (HARD): every compared token's v4
        record_hash DIFFERS from its v3 value — expected exactly because the
        GT fields enter the canonical payload (this is why contract v4
@@ -52,9 +52,10 @@ DEFAULT_V3_ASSETS = "data/dataset_v1"
 DEFAULT_REPORTS = "runs/S08_gt_backfill"
 SPLITS = ("train", "val", "test")
 
-#: The five S08 backfill fields every valid v4 record must carry.
+#: The FOUR v7 backfill fields every valid record must carry (V7-C1: the
+#: reasoning render chain retired with the T0 atomic batch).
 EXPECTED_OUTPUT_KEYS = frozenset(
-    {"critical_objects", "risk_factors", "reasoning", "yield_required", "speed_action"}
+    {"critical_objects", "risk_factors", "yield_required", "speed_action"}
 )
 
 

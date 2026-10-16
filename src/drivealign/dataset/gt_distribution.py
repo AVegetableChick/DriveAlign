@@ -1,19 +1,21 @@
-"""GT distribution accounting for the v4 dataset build (S08).
+"""GT distribution accounting for the v7 dataset build (S13).
 
 Purpose:
-    Accumulate the label-side distributions of the five ``expected_output``
+    Accumulate the label-side distributions of the four ``expected_output``
     fields WHILE the build writes shards (zero extra I/O pass), then emit a
     single ``gt_distribution_report.{json,md}`` pair next to the build
     report. Quarantined records carry no GT and are never counted; the
     ``frames`` denominator of every split therefore equals its
     ``backfilled_count`` (gate: ``gt_backfill_full`` makes that == valid).
 
-    All enum vocabularies are read from the frozen v4 contract assets —
-    categories / motion states / speed actions from ``output_schema.json``
-    and the seven risk terms from ``risk_taxonomy.json`` — so zero-count
-    values still appear as explicit rows and any contract drift is caught
-    instead of silently re-columned. Counting is deterministic: identical
-    builds produce identical payloads (sorted keys, closed vocabularies).
+    All enum vocabularies are read from the frozen v7 contract assets —
+    categories / motion states / speed actions / risk terms from the
+    DEFAULT contract's ``output_schema.json`` + ``risk_taxonomy.json`` — so
+    zero-count values still appear as explicit rows and any contract drift
+    is caught instead of silently re-columned. Counting is deterministic:
+    identical builds produce identical payloads (sorted keys, closed
+    vocabularies). The reasoning render chain is retired in v7 — no
+    reasoning-length stats.
 
     The per-split payload feeds the markdown renderer; an ``all`` payload
     (sum over splits) is appended by the caller.
@@ -28,12 +30,12 @@ from __future__ import annotations
 from collections import Counter
 from typing import Dict, List, Mapping
 
-from drivealign.contracts.versions import contract_file
+from drivealign.contracts.versions import DEFAULT_CONTRACT_VERSION, contract_file
 
 
 def _schema_enums() -> tuple:
-    """(categories, motion_states, speed_actions) from the frozen v4 schema."""
-    schema = _load_json(contract_file("v4", "output_schema.json"))
+    """(categories, motion_states, speed_actions) from the frozen v7 schema."""
+    schema = _load_json(contract_file(DEFAULT_CONTRACT_VERSION, "output_schema.json"))
     obj = schema["$defs"]["critical_object"]["properties"]
     actions = schema["properties"]["speed_action"]["enum"]
     return tuple(obj["category"]["enum"]), tuple(obj["motion_state"]["enum"]), tuple(
@@ -42,7 +44,7 @@ def _schema_enums() -> tuple:
 
 
 def _risk_terms() -> tuple:
-    taxonomy = _load_json(contract_file("v4", "risk_taxonomy.json"))
+    taxonomy = _load_json(contract_file(DEFAULT_CONTRACT_VERSION, "risk_taxonomy.json"))
     return tuple(sorted(t["canonical"] for t in taxonomy["terms"]))
 
 
@@ -57,14 +59,6 @@ RISK_TERMS = _risk_terms()
 YIELD_KEYS = ("true", "false")
 
 
-def _pctl(sorted_values: List[int], q: float) -> int:
-    """Nearest-rank percentile of an ascending list (q in [0, 1])."""
-    if not sorted_values:
-        return 0
-    index = min(len(sorted_values) - 1, round(q * (len(sorted_values) - 1)))
-    return sorted_values[index]
-
-
 class GtDistribution:
     """Mutable accumulator over backfilled ``expected_output`` records."""
 
@@ -73,14 +67,13 @@ class GtDistribution:
         self.speed_action: Counter = Counter()
         self.yield_required: Counter = Counter()
         self.risk_terms: Counter = Counter()
-        self.risk_frames: Counter = Counter()  # n_risks per frame, 0..7
+        self.risk_frames: Counter = Counter()  # n_risks per frame, 0..6
         self.categories: Counter = Counter()
         self.motion_states: Counter = Counter()
         self.category_motion: Dict[str, Counter] = {}
         self.objects_per_frame: Counter = Counter()  # 0..8
         self.speed_action_x_yield: Counter = Counter()  # (action, "true"/"false")
         self.total_objects = 0
-        self.reasoning_lengths: List[int] = []
 
     def update(self, expected_output: Mapping) -> None:
         """Count one GT-filled record (quarantined None never reaches here)."""
@@ -90,7 +83,10 @@ class GtDistribution:
         yield_key = "true" if expected_output["yield_required"] else "false"
         self.yield_required[yield_key] += 1
         self.speed_action_x_yield[(action, yield_key)] += 1
-        risks = list(expected_output["risk_factors"])
+        # v7 归因（V7-A1）：risk_factors 条目是 {factor, objects}——分布统计
+        # 口径只看因子名（objects 的 id 引用不进分布），基数 = 条目数。
+        risk_entries = list(expected_output["risk_factors"])
+        risks = [entry["factor"] for entry in risk_entries]
         self.risk_frames[len(risks)] += 1
         self.risk_terms.update(risks)
         objects = list(expected_output["critical_objects"])
@@ -102,7 +98,6 @@ class GtDistribution:
             self.category_motion.setdefault(obj["category"], Counter())[
                 obj["motion_state"]
             ] += 1
-        self.reasoning_lengths.append(len(expected_output["reasoning"]))
 
     def merge(self, other: "GtDistribution") -> None:
         """Fold ``other`` into self (used for the cross-split TOTAL)."""
@@ -118,19 +113,15 @@ class GtDistribution:
         self.objects_per_frame.update(other.objects_per_frame)
         self.speed_action_x_yield.update(other.speed_action_x_yield)
         self.total_objects += other.total_objects
-        self.reasoning_lengths.extend(other.reasoning_lengths)
 
     def to_payload(self) -> dict:
         """Deterministic JSON-ready dict (sorted keys, explicit zero rows)."""
-        lengths = sorted(self.reasoning_lengths)
-        mean = round(sum(lengths) / len(lengths), 1) if lengths else 0.0
 
         def sorted_counts(counter: Counter, vocabulary) -> Dict[str, int]:
             return {str(name): int(counter.get(name, 0)) for name in sorted(vocabulary)}
 
         return {
             "frames": self.frames,
-            "reasoning_length": {"mean": mean, "p50": _pctl(lengths, 0.50), "p90": _pctl(lengths, 0.90)},
             "risk_frames": sorted_counts(self.risk_frames, range(len(RISK_TERMS) + 1)),
             "risk_terms": sorted_counts(self.risk_terms, RISK_TERMS),
             "speed_action": sorted_counts(self.speed_action, SPEED_ACTIONS),
@@ -164,7 +155,7 @@ def render_gt_distribution_markdown(per_split: Dict[str, dict], meta: Mapping) -
     splits = [s for s in per_split if s != "all"]
     columns = splits + ["all"]
     lines = [
-        "# S08 v4 GT distribution report",
+        "# S13 v7 GT distribution report",
         "",
         "## Meta",
         "",
@@ -174,7 +165,7 @@ def render_gt_distribution_markdown(per_split: Dict[str, dict], meta: Mapping) -
     lines += [
         "",
         "Frames = GT-backfilled (valid) records; quarantined records carry no "
-        "GT and are excluded. Enum vocabularies are the frozen v4 contract "
+        "GT and are excluded. Enum vocabularies are the frozen v7 contract "
         "assets, so zero-count rows stay visible.",
         "",
     ]
@@ -252,12 +243,4 @@ def render_gt_distribution_markdown(per_split: Dict[str, dict], meta: Mapping) -
         for action in SPEED_ACTIONS
     ]
     table("speed_action x yield_required (all)", ["speed_action", *YIELD_KEYS, "total"], rows)
-
-    # 9) reasoning length
-    rows = [
-        [stat]
-        + [str(per_split[c]["reasoning_length"][stat]) for c in columns]
-        for stat in ("mean", "p50", "p90")
-    ]
-    table("reasoning length (chars)", ["stat", *columns], rows)
     return "\n".join(lines) + "\n"

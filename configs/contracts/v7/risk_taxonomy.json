@@ -1,0 +1,38 @@
+{
+  "version": "v7",
+  "schema_ref": "v7/output_schema.json#/properties/risk_factors",
+  "description": "Closed risk taxonomy, revised by the S13 contract v7 ruling (R-OPT-1..6). Design constraint: every canonical term must be deterministically derivable from future physical evidence available to the oracle. corridor_conflict is removed (a constructive 100% superset of the two crossing factors; its only independent information — the static-family firing remnant — is absorbed by the widened stationary_obstacle in-path condition). congestion is removed (starved label, 0.27% detection) and its slot is re-purposed as object_near. vehicle_merging is renamed vehicle_crossing (cut-in and perpendicular crossing unified) and pedestrian_crossing is widened to vru_crossing (pedestrian + bicycle + motorcycle); both crossing factors share the counterfactual firing engine (buffer = base + deterministic support-function projection of the annotation box onto the gap direction) gated by a unified lateral-velocity rule. The parser normalizes synonyms before validation; unmapped terms are recorded in ParseResult.unmapped_terms and reported as semantic_range_failure.",
+  "unmapped_policy": "record_and_fail",
+  "terms": [
+    {
+      "canonical": "vru_crossing",
+      "synonyms": ["jaywalking", "pedestrian on road", "person crossing", "pedestrian in path", "pedestrian crossing", "cyclist crossing", "bicycle crossing", "bicycle in path", "motorcycle crossing", "motorcycle cutting in", "vru crossing"],
+      "gt_derivation": "a vru-family object (pedestrian, bicycle, motorcycle) fires the counterfactual corridor engine (minimum physical clearance below the base buffer) AND its lateral velocity component is directed toward the ego corridor above the unified threshold"
+    },
+    {
+      "canonical": "vehicle_crossing",
+      "synonyms": ["cut in", "cut-in", "cutin", "merging car", "merging vehicle", "lane change into ego lane", "vehicle cutting in", "vehicle crossing", "vehicle crossing ego path", "vehicle cutting across"],
+      "gt_derivation": "a vehicle-family object fires the counterfactual corridor engine (minimum physical clearance below the base buffer) AND its lateral velocity component is directed toward the ego corridor above the unified threshold; covers cut-ins and perpendicular crossings; same-lane approach without lateral motion earns no label"
+    },
+    {
+      "canonical": "lead_vehicle_braking",
+      "synonyms": ["car ahead braking", "lead decelerating", "braking vehicle ahead", "leading car slowing down"],
+      "gt_derivation": "some in-path lead (vehicle family plus bicycle/motorcycle; center ahead of ego within the calibrated lateral half-width) whose actual future evidence window shows a speed drop of at least the threshold below its t0 speed"
+    },
+    {
+      "canonical": "stationary_obstacle",
+      "synonyms": ["parked car in lane", "obstacle ahead", "stalled vehicle", "debris on road", "stopped vehicle in path", "stopped object near the ego path"],
+      "gt_derivation": "an object of any class with t0 speed and all future-window speeds at or below the stationary threshold, whose t0 center is ahead of ego within the calibrated in-path lateral half-width (wider than the braking half-width; absorbs the former corridor_conflict static remnant)"
+    },
+    {
+      "canonical": "object_near",
+      "synonyms": ["object too close", "close object", "near object", "object very close to ego", "immediate obstacle nearby"],
+      "gt_derivation": "any pool object whose t0 sensor-frame center distance is within the calibrated near radius of ego; pure instantaneous spatial evidence, no motion or direction condition"
+    },
+    {
+      "canonical": "oncoming_traffic",
+      "synonyms": ["oncoming car", "opposing traffic", "vehicle in opposite lane", "oncoming lane traffic"],
+      "gt_derivation": "an object of the vehicle family plus bicycle/motorcycle with motion_state oncoming (relative velocity toward ego) within the oncoming range"
+    }
+  ]
+}

@@ -116,9 +116,9 @@ def test_request_stamps_model_face_version():
         model_face_version,
     )
 
-    assert DEFAULT_CONTRACT_VERSION == "v6"  # S11: prompt stops teaching reasoning
+    assert DEFAULT_CONTRACT_VERSION == "v7"  # S13: 6-item taxonomy + BEV fields
     req = serialize(_model_inputs(), InputPolicy.ONE_FRAME)
-    assert req.contract_version == model_face_version("v6") == "v6"
+    assert req.contract_version == model_face_version("v7") == "v7"
     # Frozen lineage history (S08 gate 1): v4 kept the v3 model face verbatim.
     assert model_face_version("v4") == "v3"
 

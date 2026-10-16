@@ -13,9 +13,12 @@ Purpose:
         KEEP_SPEED : otherwise
       With an empty future window (scene-end truncation is NOT a quarantine)
       the label degrades to KEEP_SPEED and the caller can count the case.
-    - ``yield_required`` — CONFLICT evidence: pure counterfactual, true iff
-      the corridor family fired (corridor_conflict / pedestrian_crossing /
-      vehicle_merging). The actual "did ego yield" behavior is deliberately
+    - ``yield_required`` — CONFLICT evidence: true iff ANY pool object fired
+      under the v7 firing engine (``risk.derive_risk_factors`` returns
+      ``(factors, any_firing)``). The union INCLUDES static objects and
+      label-less firings — the v7 firing mechanism has no taxonomy label of
+      its own, it feeds only the two crossing factors and this union (rules
+      doc §0.6 / §7). The actual "did ego yield" behavior is deliberately
       NOT mixed in — that would re-create the self-defeating trap where a
       good driver erases the conflict evidence (P1.6 evidence split).
 
@@ -24,7 +27,7 @@ Example launch command:
     PYTHONPATH=DriveAlign/src python -c \
     "from drivealign.gt.action_yield import derive_speed_action, derive_yield_required; \
     print(derive_speed_action(8.0, [7.9, 6.0, 4.0], delta=0.15, stop_speed_mps=0.5)); \
-    print(derive_yield_required(['corridor_conflict']))"``
+    print(derive_yield_required(True))"``
 """
 
 from __future__ import annotations
@@ -36,13 +39,6 @@ ACCELERATE = "ACCELERATE"
 KEEP_SPEED = "KEEP_SPEED"
 DECELERATE = "DECELERATE"
 STOP = "STOP"
-
-# Corridor family (the counterfactual conflict evidence for yield_required).
-CORRIDOR_FAMILY = (
-    "corridor_conflict",
-    "pedestrian_crossing",
-    "vehicle_merging",
-)
 
 
 def future_ego_speeds(
@@ -93,9 +89,12 @@ def derive_speed_action(
     return KEEP_SPEED
 
 
-def derive_yield_required(risk_factors: Sequence[str]) -> bool:
-    """True iff any corridor-family risk fired (pure counterfactual)."""
-    return any(r in CORRIDOR_FAMILY for r in risk_factors)
+def derive_yield_required(any_firing: bool) -> bool:
+    """v7 yield = firing 并集（rules §7）：risk 引擎直接给出布尔入参。
+
+    与因子标签完全解耦：static 对象与无标签 firing 同样贡献 true。
+    """ 
+    return bool(any_firing)
 
 
 __all__ = [
@@ -103,7 +102,6 @@ __all__ = [
     "KEEP_SPEED",
     "DECELERATE",
     "STOP",
-    "CORRIDOR_FAMILY",
     "future_ego_speeds",
     "derive_speed_action",
     "derive_yield_required",

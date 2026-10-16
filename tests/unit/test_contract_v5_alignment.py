@@ -50,16 +50,31 @@ V5_RISK_TERMS = {
     "oncoming_traffic",
 }
 
+#: The 6 canonical risk terms of the current v7 taxonomy (S13 revision).
+V7_RISK_TERMS = {
+    "vru_crossing",
+    "vehicle_crossing",
+    "lead_vehicle_braking",
+    "stationary_obstacle",
+    "object_near",
+    "oncoming_traffic",
+}
+
 #: The exact clause deleted from the v4 prompt to form the v5 prompt.
 _REMOVED_CLAUSE = '"small_following_gap" (very short distance to the vehicle ahead), '
 
 _RISK_ITEM_RE = re.compile(r'"([a-z_]+)" \(')
 
+#: v7 归因（V7-A1）后 prompt 的 risk_factors 行 teaching 变成对象形状，行内
+#: 还会出现包装键名 "factor" / "objects"（同样命中 ``"word" (`` 正则）；
+#: 提取因子枚举时剔除这两个结构键（对 v5/v6 行是无差剔除）。
+_STRUCTURAL_KEYS = {"factor", "objects"}
+
 
 def _risk_items(prompt_text: str) -> set[str]:
     """Extract the enumerated risk terms from a prompt's risk_factors line."""
     line = next(l for l in prompt_text.splitlines() if '"risk_factors"' in l)
-    return set(_RISK_ITEM_RE.findall(line))
+    return set(_RISK_ITEM_RE.findall(line)) - _STRUCTURAL_KEYS
 
 
 def _schema_risk_enum(version: str) -> set[str]:
@@ -116,20 +131,20 @@ def test_v4_assets_stay_frozen():
 
 
 def test_v5_registry_and_face():
-    assert AVAILABLE_CONTRACT_VERSIONS[-3:] == ("v4", "v5", "v6")
-    assert AVAILABLE_CONTRACT_VERSIONS[-1] == "v6"
+    assert AVAILABLE_CONTRACT_VERSIONS[-3:] == ("v5", "v6", "v7")
+    assert AVAILABLE_CONTRACT_VERSIONS[-1] == "v7"
     assert model_face_version("v5") == "v5"
     assert model_face_version("v4") == "v3"
     for name in MODEL_FACE_FILES:
         assert contract_file("v5", name).is_file()
 
 
-def test_runtime_default_resolves_to_v6_face():
-    """The S11 default prompt is the 4-field v6 text (no reasoning)."""
+def test_runtime_default_resolves_to_v7_face():
+    """The S13 default prompt is the v7 text (6-item taxonomy + BEV fields)."""
     frozen = build_structured_prompt()
     assert "reasoning" not in frozen
     assert "small_following_gap" not in frozen
-    assert _risk_items(frozen) == V5_RISK_TERMS
+    assert _risk_items(frozen) == V7_RISK_TERMS
     model_inputs = ModelInputs(
         frames=[
             FrameInput(
@@ -139,5 +154,5 @@ def test_runtime_default_resolves_to_v6_face():
         ego_speed_mps=5.2,
     )
     request = serialize(model_inputs, InputPolicy.ONE_FRAME)
-    assert request.contract_version == "v6"
+    assert request.contract_version == "v7"
     assert request.prompt.endswith(frozen)

@@ -117,7 +117,11 @@ def _model_inputs() -> ModelInputs:
 
 
 def test_v6_four_field_valid_payload_parses_ok():
-    r = parse_structured_output(json.dumps(_v6_valid_payload()))
+    # Explicit v6 face: the runtime default advanced to v7 (S13), and a
+    # v6-shaped payload (no BEV) must keep validating against v6 itself.
+    r = parse_structured_output(
+        json.dumps(_v6_valid_payload()), contract_version="v6"
+    )
     assert r.ok and r.errors == ()
     assert r.output.contract_version == "v6"
     assert r.output.reasoning is None
@@ -126,22 +130,26 @@ def test_v6_four_field_valid_payload_parses_ok():
 
 def test_v6_rejects_reasoning_as_extra_property():
     payload = dict(_v6_valid_payload(), reasoning="clear")
-    r = parse_structured_output(json.dumps(payload))
+    r = parse_structured_output(json.dumps(payload), contract_version="v6")
     assert not r.ok and r.output is None
 
 
 def test_v6_requires_all_four_fields():
     for missing in V6_FIELDS:
         payload = {k: v for k, v in _v6_valid_payload().items() if k != missing}
-        r = parse_structured_output(json.dumps(payload))
+        r = parse_structured_output(json.dumps(payload), contract_version="v6")
         assert not r.ok, f"v6 should require {missing!r}"
 
 
 def test_v6_enum_and_type_violations_fail():
     bad_enum = dict(_v6_valid_payload(), speed_action="YIELD")
-    assert not parse_structured_output(json.dumps(bad_enum)).ok
+    assert not parse_structured_output(
+        json.dumps(bad_enum), contract_version="v6"
+    ).ok
     bad_type = dict(_v6_valid_payload(), yield_required="false")
-    assert not parse_structured_output(json.dumps(bad_type)).ok
+    assert not parse_structured_output(
+        json.dumps(bad_type), contract_version="v6"
+    ).ok
 
 
 # --------------------------------------------------------------------------
@@ -204,8 +212,8 @@ def test_v6_hash_face_vocabs_inherit_v5():
 
 
 def test_v6_registry_and_face():
-    assert AVAILABLE_CONTRACT_VERSIONS[-2:] == ("v5", "v6")
-    assert DEFAULT_CONTRACT_VERSION == "v6"
+    assert AVAILABLE_CONTRACT_VERSIONS[-2:] == ("v6", "v7")
+    assert DEFAULT_CONTRACT_VERSION == "v7"  # S13: default advanced past v6
     assert MODEL_FACE_LINEAGE["v6"] == "v6"
     assert model_face_version("v6") == "v6"
     # The v5 face and v3/v4 face history are untouched.
@@ -213,11 +221,12 @@ def test_v6_registry_and_face():
     assert model_face_version("v4") == "v3"
 
 
-def test_runtime_default_resolves_to_v6_face():
+def test_runtime_default_advances_to_v7_face():
+    """S13 moved the runtime default to v7; it must still be reasoning-free."""
     frozen = build_structured_prompt()
     assert "reasoning" not in frozen
     request = serialize(_model_inputs(), InputPolicy.ONE_FRAME)
-    assert request.contract_version == "v6"
+    assert request.contract_version == "v7"
     assert request.prompt.endswith(frozen)
 
 
@@ -253,10 +262,13 @@ def test_v6_owns_its_face_vs_v5():
     assert "reasoning" in v5_request.prompt
     assert "reasoning" not in v6_request.prompt
     assert v6_request.canonical_hash() != v5_request.canonical_hash()
-    # The reconstruction is faithful: default serialize == v6 face hash.
+    # The runtime default advanced to v7 (S13): serialize == v7 face, which
+    # differs from both the v5 and v6 faces for the same causal inputs.
+    v7_request = _request_for("v7", mi)
     assert serialize(mi, InputPolicy.ONE_FRAME).canonical_hash() == (
-        v6_request.canonical_hash()
+        v7_request.canonical_hash()
     )
+    assert v7_request.canonical_hash() != v6_request.canonical_hash()
 
 
 # --------------------------------------------------------------------------
@@ -266,6 +278,11 @@ def test_v6_owns_its_face_vs_v5():
 
 
 DATASET_V4 = Path(__file__).resolve().parents[3] / "data" / "dataset_v4"
+# v5-face manifest 的归档权威位置（S13 裁定：dataset_v4 目录只放 record shards，
+# anchor manifest 一律以 data/face_manifests/<v>/ 为唯一入口，避免双份误导）。
+FACE_MANIFESTS_V5 = (
+    Path(__file__).resolve().parents[3] / "data" / "face_manifests" / "v5"
+)
 
 
 def _v4_records(limit=5):
@@ -295,18 +312,19 @@ def test_dataset_v4_records_bind_own_face_unaffected_by_default():
         assert expected is not None and "reasoning" in expected
         pr = parse_structured_output(json.dumps(expected), contract_version="v4")
         assert pr.ok, f"v4 record GT failed self-validation for {rec.sample_token}"
-        # Requests on frozen records now carry the CURRENT DEFAULT face (v6);
+        # Requests on frozen records now carry the CURRENT DEFAULT face (v7);
         # that is a face-stamp change only, not a record mutation.
         request = serialize(rec.model_inputs, InputPolicy.ONE_FRAME)
-        assert request.contract_version == "v6"
+        assert request.contract_version == "v7"
 
 
 def test_archived_v5_request_hash_is_reproducible_and_differs_from_v6():
-    """S09's frozen v5-face manifest (data/dataset_v4/anchor_policy_manifest.json,
-    sha fd0d4dc4...) records each anchor's v5 request hash. A real record
-    rebuilt under the v5 face must reproduce that hash; the v6 face must differ
-    (the whole point of owning the model face)."""
-    manifest_path = DATASET_V4 / "anchor_policy_manifest.json"
+    """S09's frozen v5-face manifest（归档于 data/face_manifests/v5/
+    anchor_policy_manifest.json，sha fd0d4dc4...，与原 dataset_v4 原位副本
+    逐字节相同）记录每个 anchor 的 v5 request hash。用真实 record 在 v5
+    face 下重建必须复现该哈希；v6 face 必须不同（模型 face 所有权的意义）。
+    """
+    manifest_path = FACE_MANIFESTS_V5 / "anchor_policy_manifest.json"
     shard = DATASET_V4 / "train" / "shard-0000.jsonl"
     if not (manifest_path.is_file() and shard.is_file()):
         pytest.skip("dataset_v4 not present")

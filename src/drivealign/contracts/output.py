@@ -33,6 +33,13 @@ Purpose:
       deterministically from each bbox center (nine-grid) and reported in
       ``ParseResult.derived_positions``; it is never part of the generation
       contract and never enters ``to_dict()``.
+    - v7 (S13, ruling V7-A1): revised 6-item taxonomy; every
+      ``critical_object`` carries ``bev_x`` / ``bev_y`` (0.1 m rounding) and
+      a unique ``id`` (0-7); ``risk_factors`` entries become
+      ``{factor, objects}`` attribution referencing those ids. Parser
+      semantic checks enforce duplicate-factor / duplicate-id rejection and
+      reference integrity; the factor names stay exposed version-blind via
+      ``StructuredDrivingOutput.risk_factors``.
 
 Startup command:
     This module is a library imported by the Stage 03 structured runner and
@@ -45,7 +52,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 from functools import lru_cache
 from typing import Any, Mapping, Sequence
@@ -93,16 +100,23 @@ class CriticalObject:
     """One driving-relevant object with its image-space bbox.
 
     ``coarse_position`` and ``behavior`` are schema v1 generation fields;
-    ``motion_state`` is the schema v2 replacement. ``None`` fields are
-    omitted from ``to_dict()`` so the dict stays schema-shaped for the
-    version that produced it. Derived v2 positions are not stored here.
+    ``motion_state`` is the schema v2 replacement; ``bev_x`` / ``bev_y``
+    are the contract v7 ego-frame nearest-footprint-point fields (meters,
+    rounded to 0.1 m at parse time); ``id`` is the contract v7 attribution
+    anchor (unique integer 0-7) referenced by ``risk_factors`` entries.
+    ``None`` fields are omitted from ``to_dict()`` so the dict stays
+    schema-shaped for the version that produced it. Derived v2 positions
+    are not stored here.
     """
 
     category: str
     bbox_2d: tuple[float, float, float, float]
+    id: int | None = None
     motion_state: str | None = None
     coarse_position: str | None = None
     behavior: str | None = None
+    bev_x: float | None = None
+    bev_y: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Return the schema-shaped dict for the version that parsed this."""
@@ -110,18 +124,49 @@ class CriticalObject:
             "category": self.category,
             "bbox_2d": list(self.bbox_2d),
         }
+        if self.id is not None:
+            payload["id"] = self.id
         if self.motion_state is not None:
             payload["motion_state"] = self.motion_state
         if self.coarse_position is not None:
             payload["coarse_position"] = self.coarse_position
         if self.behavior is not None:
             payload["behavior"] = self.behavior
+        if self.bev_x is not None:
+            payload["bev_x"] = self.bev_x
+        if self.bev_y is not None:
+            payload["bev_y"] = self.bev_y
         return payload
 
 
 @dataclass(frozen=True)
+class RiskFactorAttribution:
+    """One v7 risk_factors entry: factor + the object ids triggering it.
+
+    v7 把 risk_factors 从字符串数组对象化（决策台账 V7-A1 / D-A1-1）：
+    每个条目 = 因子名 + 触发该因子的 critical_objects id 列表（D-A1-2
+    显式 id 引用）。仅 v7+ 面填充；v1–v6 仍是名字元组。
+    """
+
+    factor: str
+    objects: tuple[int, ...]
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return the schema-shaped {factor, objects} dict."""
+        return {"factor": self.factor, "objects": list(self.objects)}
+
+
+@dataclass(frozen=True)
 class StructuredDrivingOutput:
-    """The versioned structured output produced by one model call."""
+    """The versioned structured output produced by one model call.
+
+    ``risk_factors`` stays the factor-NAME tuple for every version (the
+    counting consumers — evaluator / GT distribution — are version-blind);
+    ``risk_attribution`` carries the v7 per-factor object-id references and
+    stays empty for v1-v6. ``to_dict()`` emits the schema shape of the
+    parsing version: object entries when attribution exists, bare names
+    otherwise.
+    """
 
     critical_objects: tuple[CriticalObject, ...]
     risk_factors: tuple[str, ...]
@@ -129,19 +174,27 @@ class StructuredDrivingOutput:
     speed_action: str
     contract_version: str
     reasoning: str | None = None
+    risk_attribution: tuple[RiskFactorAttribution, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         """Return the schema-shaped dict without the injected version tag.
 
         ``reasoning`` is emitted only when the parsing contract version
         carries it (v6 dropped the field from the generation schema).
+        ``risk_factors`` is emitted as [{factor, objects}] for faces with
+        attribution (v7) and as a name list for older faces.
         """
         payload: dict[str, Any] = {
             "critical_objects": [item.to_dict() for item in self.critical_objects],
-            "risk_factors": list(self.risk_factors),
             "yield_required": self.yield_required,
             "speed_action": self.speed_action,
         }
+        if self.risk_attribution:
+            payload["risk_factors"] = [
+                item.to_dict() for item in self.risk_attribution
+            ]
+        else:
+            payload["risk_factors"] = list(self.risk_factors)
         if self.reasoning is not None:
             payload["reasoning"] = self.reasoning
         return payload
@@ -285,6 +338,22 @@ def _normalize_v2_payload(
     if isinstance(risks, list):
         fixed_risks = []
         for value in risks:
+            # v7+: {factor, objects} 条目——只归一化 factor 键，objects 是
+            # id 整数引用，不经词表（schema 随后校验其结构与范围）。
+            if isinstance(value, dict):
+                fixed = dict(value)
+                factor = fixed.get("factor")
+                if isinstance(factor, str):
+                    canonical = _canonicalize_term(factor, risk_map)
+                    if canonical is not None:
+                        if canonical != factor:
+                            normalized_terms.append((factor, canonical))
+                        fixed["factor"] = canonical
+                    else:
+                        unmapped_terms.append(factor)
+                        fixed["factor"] = factor
+                fixed_risks.append(fixed)
+                continue
             if not isinstance(value, str):
                 fixed_risks.append(value)
                 continue
@@ -313,12 +382,19 @@ def _format_path(absolute_path: Sequence[Any]) -> str | None:
 
 def _build_critical_object(payload: Mapping[str, Any]) -> CriticalObject:
     bbox = payload["bbox_2d"]
+    # v7 BEV fields: present only under faces that require them; both GT and
+    # model outputs live on the same 0.1 m grid, so round at parse time.
+    bev_x = payload.get("bev_x")
+    bev_y = payload.get("bev_y")
     return CriticalObject(
         category=payload["category"],
         bbox_2d=(float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3])),
+        id=payload.get("id"),
         motion_state=payload.get("motion_state"),
         coarse_position=payload.get("coarse_position"),
         behavior=payload.get("behavior"),
+        bev_x=None if bev_x is None else round(float(bev_x), 1),
+        bev_y=None if bev_y is None else round(float(bev_y), 1),
     )
 
 
@@ -361,8 +437,61 @@ def _semantic_errors(output: StructuredDrivingOutput, image_size: Sequence[float
                             f"[{x_max}, {y_max}] > [{width}, {height}]"
                         ),
                         field=f"$.critical_objects[{index}].bbox_2d",
+                )
+            )
+    # v7 归因语义校验（schema 无法表达的引用完整性与按成员去重；归因规则稿
+    # §4.3）。触发条件 = 所有对象都带 id（v7+ 面）；v1–v6 的 id 全为 None，
+    # 整块跳过。从不静默修复：违规即 SEMANTIC_RANGE_FAILURE。
+    if output.critical_objects and all(
+        item.id is not None for item in output.critical_objects
+    ):
+        seen_ids: set[int] = set()
+        for index, item in enumerate(output.critical_objects):
+            if item.id in seen_ids:
+                errors.append(
+                    OutputContractError(
+                        category=OutputErrorCategory.SEMANTIC_RANGE_FAILURE,
+                        message=f"duplicate critical_objects id: {item.id}",
+                        field=f"$.critical_objects[{index}].id",
                     )
                 )
+            seen_ids.add(item.id)
+        seen_factors: set[str] = set()
+        for a_index, attr in enumerate(output.risk_attribution):
+            if attr.factor in seen_factors:
+                errors.append(
+                    OutputContractError(
+                        category=OutputErrorCategory.SEMANTIC_RANGE_FAILURE,
+                        message=(
+                            f"duplicate risk_factors entry for factor: {attr.factor}"
+                        ),
+                        field=f"$.risk_factors[{a_index}].factor",
+                    )
+                )
+            seen_factors.add(attr.factor)
+            if len(set(attr.objects)) != len(attr.objects):
+                errors.append(
+                    OutputContractError(
+                        category=OutputErrorCategory.SEMANTIC_RANGE_FAILURE,
+                        message=(
+                            f"duplicate object id in risk_factors entry "
+                            f"{attr.factor!r}: {attr.objects}"
+                        ),
+                        field=f"$.risk_factors[{a_index}].objects",
+                    )
+                )
+            for obj_id in attr.objects:
+                if obj_id not in seen_ids:
+                    errors.append(
+                        OutputContractError(
+                            category=OutputErrorCategory.SEMANTIC_RANGE_FAILURE,
+                            message=(
+                                f"risk_factors entry {attr.factor!r} references "
+                                f"unknown object id: {obj_id}"
+                            ),
+                            field=f"$.risk_factors[{a_index}].objects",
+                        )
+                    )
     return errors
 
 
@@ -384,6 +513,7 @@ def parse_structured_output(
     *,
     contract_version: str | None = None,
     image_size: Sequence[float] | None = None,
+    bbox_source_size: Sequence[float] | None = None,
 ) -> ParseResult:
     """Parse one raw model text strictly against one contract version.
 
@@ -396,6 +526,14 @@ def parse_structured_output(
     (recorded term by term in ``normalized_terms``/``unmapped_terms``).
     ``image_size`` optionally enables the image-bounds semantic check and the
     deterministic ``coarse_position`` derivation.
+    ``bbox_source_size`` declares the image space the model emitted
+    ``bbox_2d`` in (e.g. the smart-resized input 784x448 under
+    ``max_pixels=360000``); when provided together with ``image_size`` (the
+    original space), every parsed bbox is deterministically rescaled into the
+    original space *before* the bounds check and ``coarse_position``
+    derivation, so downstream consumers (eval, BEV) always see original-image
+    coordinates. Omit it when the model already emits original-image
+    coordinates (SFT-trained models).
     """
     version = contract_version if contract_version is not None else DEFAULT_CONTRACT_VERSION
     if version not in AVAILABLE_CONTRACT_VERSIONS:
@@ -489,17 +627,65 @@ def parse_structured_output(
             unmapped_terms=unmapped_terms,
         )
 
+    # v7+: risk_factors 条目是 {factor, objects}（schema 已在上一步保证全部
+    # 条目形状一致）——names 元组与 attribution 由同一 payload 同步构造；
+    # v1–v6 仍是纯名字元组。
+    raw_risks = payload["risk_factors"]
+    if raw_risks and isinstance(raw_risks[0], dict):
+        attribution = tuple(
+            RiskFactorAttribution(
+                factor=item["factor"], objects=tuple(item["objects"])
+            )
+            for item in raw_risks
+        )
+        risk_names = tuple(attr.factor for attr in attribution)
+    else:
+        attribution = ()
+        risk_names = tuple(raw_risks)
+
     output = StructuredDrivingOutput(
         critical_objects=tuple(
             _build_critical_object(item)
             for item in payload["critical_objects"]
         ),
-        risk_factors=tuple(payload["risk_factors"]),
+        risk_factors=risk_names,
         yield_required=payload["yield_required"],
         speed_action=payload["speed_action"],
         contract_version=version,
         reasoning=payload.get("reasoning"),
+        risk_attribution=attribution,
     )
+
+    if bbox_source_size is not None:
+        # S13 口径：模型在 smart-resize 输入空间（如 784x448）发射 bbox 时，
+        # 落盘前确定性反变换回原图空间（下游 eval/BEV 只见原图坐标）。
+        if image_size is None:
+            raise ValueError(
+                "bbox_source_size requires image_size (the original image "
+                "space) to be provided as well"
+            )
+        # 除法在前：(v / src) * dst 使源空间贴边值（如 y2=448）精确映射到
+        # 原图贴边（900.0）。乘法在前会吃浮点噪声（448*(900/448) =
+        # 900.0000000000001 > 900），把贴边截断物体误判成越界。
+        width_src = float(bbox_source_size[0])
+        height_src = float(bbox_source_size[1])
+        width = float(image_size[0])
+        height = float(image_size[1])
+        output = replace(
+            output,
+            critical_objects=tuple(
+                replace(
+                    item,
+                    bbox_2d=(
+                        (item.bbox_2d[0] / width_src) * width,
+                        (item.bbox_2d[1] / height_src) * height,
+                        (item.bbox_2d[2] / width_src) * width,
+                        (item.bbox_2d[3] / height_src) * height,
+                    ),
+                )
+                for item in output.critical_objects
+            ),
+        )
 
     semantic = tuple(_semantic_errors(output, image_size))
     if semantic:

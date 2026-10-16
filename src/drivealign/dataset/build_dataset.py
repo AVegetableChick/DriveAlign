@@ -11,19 +11,18 @@ Purpose:
     quarantine reason code. Scene end truncates future poses naturally and
     is NOT a quarantine condition (Stage 06 behavior, unchanged).
 
-    S08 v4 backfill (this stage's addition): every VALID record gets
-    ``training_targets.expected_output`` filled through the pure S08 GT
+    S13 v7 backfill (this stage's addition): every VALID record gets
+    ``training_targets.expected_output`` filled through the pure v7 GT
     pipeline (:mod:`drivealign.gt.backfill` — observability gating, pool
-    top-8, motion_state, risk_factors, speed_action, yield_required,
-    deterministic reasoning render, v4 output-schema + zero-contradiction
-    gates, fail-fast). The GT inputs come from the SAME record's frozen
-    derivations (``model_inputs.ego_speed_mps`` and
+    top-8, motion_state, risk_factors + firing union, speed_action,
+    yield_required, critical_objects with the BEV nearest-point GT,
+    v7 output-schema gate, fail-fast). The v7 contract has FOUR fields —
+    the reasoning render chain is retired. The GT inputs come from the
+    SAME record's frozen derivations (``model_inputs.ego_speed_mps`` and
     ``oracle_only.future_ego_poses``) plus the anchor-frame evidence the gt
     package reads from nuScenes. Quarantined records keep ``None`` (no GT
     for quarantined anchors). ``adapter.py`` and the request-hash path are
-    untouched: model_inputs are byte-identical to v3 (S08 gate 1); the
-    record hash moves to a new generation exactly because the GT fields are
-    added (why contract v4 exists).
+    untouched: model_inputs are byte-identical to v3 (S08 gate 1).
 
     Outputs (data assets under ``--out``, decision D3):
     - ``<split>/shard-NNNN.jsonl``: one canonical record JSON per line
@@ -42,10 +41,10 @@ Purpose:
 
     Run artifacts (``--reports``): ``build_report.{json,md}`` with per-split
     counts, the quarantine reason distribution and the Step 2 gates; plus
-    ``gt_distribution_report.{json,md}`` with the S08 GT label distributions
-    (speed_action / yield_required / risk_factors / critical_objects /
-    reasoning length, per split + total), counted inline while shards are
-    written (:mod:`drivealign.dataset.gt_distribution`).
+    ``gt_distribution_report.{json,md}`` with the v7 GT label distributions
+    (speed_action / yield_required / risk_factors / critical_objects,
+    per split + total), counted inline while shards are written
+    (:mod:`drivealign.dataset.gt_distribution`).
 
     Gates enforced here:
     - scene manifests intact (embedded sha256 recomputed) and pairwise disjoint
@@ -101,7 +100,7 @@ from drivealign.gt.backfill import (
     build_expected_output,
     collect_anchor_evidence,
 )
-from drivealign.gt.config import RuleConfig, load_phrase_map, load_rule_config, load_templates
+from drivealign.gt.config import RuleConfig, load_rule_config
 from drivealign.records.adapter import (
     MISSING_CALIBRATION,
     NUMERIC_ANOMALY,
@@ -142,24 +141,21 @@ GT_RULE_CONFIG_FILE = "gt_rule_config.json"
 
 @dataclass(frozen=True)
 class GtAssets:
-    """Frozen S08 rule assets, loaded once per build (deterministic inputs)."""
+    """Frozen v7 rule assets, loaded once per build (deterministic inputs).
+
+    v7 只消费规则配置：模板 / 短语表随 reasoning 渲染链一并退役（T0）。
+    """
 
     rule_config: RuleConfig
-    templates: Dict
-    phrase_map: Dict
 
     @classmethod
     def load(cls) -> "GtAssets":
-        return cls(
-            rule_config=load_rule_config(),
-            templates=load_templates(),
-            phrase_map=load_phrase_map(),
-        )
+        return cls(rule_config=load_rule_config())
 
     @property
     def rule_config_sha256(self) -> str:
         return hashlib.sha256(
-            contract_file("v4", GT_RULE_CONFIG_FILE).read_bytes()
+            contract_file(DEFAULT_CONTRACT_VERSION, GT_RULE_CONFIG_FILE).read_bytes()
         ).hexdigest()
 
 
@@ -183,8 +179,6 @@ def _backfill_record(
             (p.x, p.y, p.timestamp_us) for p in record.oracle_only.future_ego_poses
         ],
         config=gt.rule_config,
-        templates=gt.templates,
-        phrase_map=gt.phrase_map,
     )
     filled = replace(
         record,

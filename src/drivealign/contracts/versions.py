@@ -36,6 +36,32 @@ Purpose:
       record-side GT provenance asset only; the model face no longer
       consumes it. dataset_v4 records are NOT rebuilt and v5 archives stay
       valid; S11 derives a v6-face anchor manifest into runs/ instead.
+    - v7: the S13 contract v7 ruling (S13_contract_v7_decision_log.md) is
+      applied to BOTH faces of the v6 generation. Per ruling V7-C1 the two
+      reasoning assets are RETIRED — v7 carries SIX artifacts (prompt.txt,
+      output_schema.json, risk_taxonomy.json, gt_rule_config.json,
+      category_vocab.json, motion_vocab.json):
+      ``prompt.txt`` re-teaches the revised 6-item risk taxonomy
+      (vru_crossing / vehicle_crossing / lead_vehicle_braking /
+      stationary_obstacle / object_near / oncoming_traffic) and the new
+      per-object ``bev_x`` / ``bev_y`` fields; ``output_schema.json`` narrows
+      the risk enum 7 -> 6 (corridor_conflict and congestion removed) and
+      adds the two BEV numbers to ``critical_object`` (required);
+      ``risk_taxonomy.json`` / ``gt_rule_config.json`` are rewritten
+      for the v7 rule engine and taxonomy. Per ruling V7-C1 (S13) the
+      reasoning assets ``reasoning_templates.json`` / ``enum_phrase_map.json``
+      are RETIRED at v7 — the model face has had no reasoning since v6, the
+      SFT supervision targets are 4-field, and the GT render chain only ever
+      consumed the frozen v4 assets — so v7 carries six artifacts and the GT
+      render chain retires with the v7 generation (expected_output drops to
+      the 4 contract fields; the v7 output_schema becomes the unified
+      GT/model validator). v7 owns its model face
+      (``MODEL_FACE_LINEAGE["v7"] == "v7"``), so v7 request hashes differ
+      from the v5/v6 faces; the GT-side structure change also moves the
+      record-hash generation, so dataset assets are rebuilt as dataset_v7
+      (new physical directory + ``data/face_manifests/v7/``), while
+      dataset_v4 and the v5/v6 face manifests stay byte-frozen. The two
+      hash-face vocab tables (category/motion) are verbatim v6 copies.
 """
 
 from functools import lru_cache
@@ -44,11 +70,12 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[3]
 CONTRACTS_DIR = REPO_ROOT / "configs" / "contracts"
 
-AVAILABLE_CONTRACT_VERSIONS = ("v1", "v2", "v3", "v4", "v5", "v6")
+AVAILABLE_CONTRACT_VERSIONS = ("v1", "v2", "v3", "v4", "v5", "v6", "v7")
 
-#: Current frozen pairing (v6 model face: prompt/schema stop teaching
-#: reasoning; GT-side assets byte-identical to v5).
-DEFAULT_CONTRACT_VERSION = "v6"
+#: Current frozen pairing (v7 model face: revised 6-item risk taxonomy +
+#: per-object BEV fields; GT-side assets rewritten for the v7 rule engine,
+#: calibration slots provisional until the S13 sweep freezes).
+DEFAULT_CONTRACT_VERSION = "v7"
 
 #: Model-face lineage: which contract version's model face each version
 #: inherits for REQUEST purposes. The request hash covers the prompt text
@@ -66,6 +93,9 @@ DEFAULT_CONTRACT_VERSION = "v6"
 #: across face eras.
 #: v6 drops reasoning from the prompt/schema, which also enters the request
 #: hash, so v6 owns its model face and S11 requests carry the ``v6`` stamp.
+#: v7 rewrites the prompt (6-item taxonomy + BEV fields) and the schema
+#: (risk enum 7 -> 6 + required bev_x/bev_y), so v7 owns its model face and
+#: S13+ requests carry the ``v7`` stamp.
 #: Every new contract version MUST add an entry here; a test pins the
 #: byte-identity of the hash-relevant artifacts.
 MODEL_FACE_LINEAGE = {
@@ -75,6 +105,7 @@ MODEL_FACE_LINEAGE = {
     "v4": "v3",
     "v5": "v5",
     "v6": "v6",
+    "v7": "v7",
 }
 
 #: The five model-face artifact files (prompt + parse/validate layer).

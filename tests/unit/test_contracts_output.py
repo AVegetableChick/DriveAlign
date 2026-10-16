@@ -197,7 +197,7 @@ def test_prompt_with_speed_only_prepends_one_line():
 
 
 def test_default_contract_version_is_frozen():
-    assert DEFAULT_CONTRACT_VERSION == "v6"
+    assert DEFAULT_CONTRACT_VERSION == "v7"
 
 
 def test_prompt_v2_states_envelope_rules_explicitly():
@@ -279,14 +279,43 @@ V2_VALID_SAMPLE = {
 
 V6_VALID_SAMPLE = {k: v for k, v in V2_VALID_SAMPLE.items() if k != "reasoning"}
 
+V7_VALID_SAMPLE = {
+    "critical_objects": [
+        {
+            "id": 0,
+            "category": "car",
+            "bbox_2d": [120, 300, 480, 560],
+            "motion_state": "same_direction",
+            "bev_x": 17.8,
+            "bev_y": 0.0,
+        }
+    ],
+    # V7-A1：risk_factors 条目 = 归因对象 {factor, objects}。
+    "risk_factors": [{"factor": "object_near", "objects": [0]}],
+    "yield_required": False,
+    "speed_action": "KEEP_SPEED",
+}
 
-def test_default_contract_is_v6_and_parses_ok():
-    result = parse_structured_output(json.dumps(V6_VALID_SAMPLE))
+
+def test_v6_face_still_parses_v6_sample():
+    """The frozen v6 face keeps validating its own 4-field shape (no BEV)."""
+    result = parse_structured_output(
+        json.dumps(V6_VALID_SAMPLE), contract_version="v6"
+    )
     assert result.ok and result.errors == ()
-    assert result.output.contract_version == DEFAULT_CONTRACT_VERSION == "v6"
+    assert result.output.contract_version == "v6"
+    assert result.output.reasoning is None
+
+
+def test_default_contract_is_v7_and_parses_ok():
+    result = parse_structured_output(json.dumps(V7_VALID_SAMPLE))
+    assert result.ok and result.errors == ()
+    assert result.output.contract_version == DEFAULT_CONTRACT_VERSION == "v7"
     assert result.output.reasoning is None
     assert "reasoning" not in result.output.to_dict()
     assert result.derived_positions == (None,)  # no image_size provided
+    obj = result.output.critical_objects[0]
+    assert obj.bev_x == 17.8 and obj.bev_y == 0.0
 
 
 def test_v2_normalizes_open_terms_via_vocab_tables():
@@ -377,3 +406,114 @@ def test_unknown_contract_version_rejected():
 
     with pytest.raises(ValueError, match="Unknown contract version"):
         parse_structured_output("{}", contract_version="v9")
+
+
+# ---------------------------------------------------------------------------
+# S13：bbox_source_size（模型 bbox 发射空间 → 原图空间的 parse 端内联反变换）。
+# 背景：base（未训）模型在 max_pixels=360000 下输出 784x448 smart-resize 空间
+# 的 bbox_2d；S13 起 runner 在 parse 端确定性反变换回原图坐标后才落盘，
+# 下游 eval/BEV 只见原图坐标（predictions 文件约定 = 原图坐标系）。
+# ---------------------------------------------------------------------------
+
+# 784x448 源空间 bbox，中心 (100, 100)；
+# scale = (1600/784, 900/448) = (2.040816…, 2.008929…)。
+SOURCE_SPACE_BBOX = [10, 10, 190, 190]
+
+
+def _source_space_sample():
+    sample = json.loads(json.dumps(VALID_SAMPLE))
+    sample["critical_objects"][0]["bbox_2d"] = list(SOURCE_SPACE_BBOX)
+    return json.dumps(sample)
+
+
+def test_bbox_source_size_rescales_to_original_space():
+    """bbox 按声明空间线性反变换回原图坐标，其余字段逐字节不变。"""
+    result = parse_v1(
+        _source_space_sample(),
+        image_size=(1600, 900),
+        bbox_source_size=(784, 448),
+    )
+    assert result.ok
+    scale_x, scale_y = 1600.0 / 784.0, 900.0 / 448.0
+    bbox = result.output.critical_objects[0].bbox_2d
+    expected = tuple(v * s for v, s in zip(SOURCE_SPACE_BBOX, (scale_x, scale_y, scale_x, scale_y)))
+    assert bbox == pytest.approx(expected)
+    # 变换只作用于几何字段，语义字段不受影响。
+    assert result.output.critical_objects[0].category == "car"
+    assert result.output.speed_action == "KEEP_SPEED"
+
+
+def test_bbox_source_size_default_none_keeps_coords():
+    """缺省（SFT 面 / 历史口径）零行为变化：bbox 原样保留。"""
+    result = parse_v1(
+        _source_space_sample(),
+        image_size=(1600, 900),
+    )
+    assert result.ok
+    assert result.output.critical_objects[0].bbox_2d == (
+        10.0, 10.0, 190.0, 190.0,
+    )
+
+
+def test_bbox_source_size_requires_image_size():
+    """只给 bbox_source_size 不给 image_size 是配置错误，显式报错拒绝。"""
+    with pytest.raises(ValueError, match="bbox_source_size requires image_size"):
+        parse_v1(_source_space_sample(), bbox_source_size=(784, 448))
+
+
+def test_bbox_rescale_precedes_bounds_check_and_coarse_position():
+    """bounds 检查与 coarse_position 派生都发生在反变换之后的原图坐标系。
+
+    源空间右侧 bbox 变换后落在原图右列（"middle right"）：
+    若变换未先行执行，(740, 224) 中心会被误判进原图左列。
+    """
+    sample = json.loads(json.dumps(V7_VALID_SAMPLE))
+    sample["critical_objects"][0]["bbox_2d"] = [700, 160, 780, 288]
+    result = parse_structured_output(
+        json.dumps(sample),
+        image_size=(1600, 900),
+        bbox_source_size=(784, 448),
+    )
+    assert result.ok and result.errors == ()
+    # 中心 (740, 224) → 原图 (1510.2, 450.0)：第 3 列、中间行。
+    assert result.derived_positions[0] == "middle right"
+    # 反变换后的 bbox 仍在原图界内（x_max = 780 * 1600/784 ≈ 1591.8）。
+    assert result.output.critical_objects[0].bbox_2d[2] == pytest.approx(
+        780.0 * 1600.0 / 784.0
+    )
+
+
+def test_bbox_out_of_original_bounds_fails_after_rescale():
+    """bounds 检查消费的是反变换后的坐标：原始发射值 [10,10,800,460] 按
+    原图口径检查本可放行（800<1600、460<900），反变换后越界 → 失败，
+    证明检查发生在变换之后且从不静默修复。"""
+    sample = json.loads(json.dumps(VALID_SAMPLE))
+    sample["critical_objects"][0]["bbox_2d"] = [10, 10, 800, 460]
+    result = parse_v1(
+        json.dumps(sample),
+        image_size=(1600, 900),
+        bbox_source_size=(784, 448),
+    )
+    assert not result.ok
+    assert {e.category for e in result.errors} == {
+        OutputErrorCategory.SEMANTIC_RANGE_FAILURE
+    }
+
+
+def test_bbox_rescale_source_edge_maps_exactly_to_original_edge():
+    """源空间贴边 bbox（截断物体常态）必须精确映射到原图贴边。
+
+    回归 pin：乘法在前的实现吃浮点噪声（448*(900/448)=900.0000000000001
+    > 900），把贴底边物体误判成越界；除法在前 (448/448)*900=900.0 精确。
+    """
+    sample = json.loads(json.dumps(VALID_SAMPLE))
+    sample["critical_objects"][0]["bbox_2d"] = [10, 10, 380, 448]
+    result = parse_v1(
+        json.dumps(sample),
+        image_size=(1600, 900),
+        bbox_source_size=(784, 448),
+    )
+    assert result.ok and result.errors == ()
+    bbox = result.output.critical_objects[0].bbox_2d
+    assert bbox[3] == 900.0  # 精确贴边，非近似
+    assert bbox[2] == pytest.approx(380.0 * 1600.0 / 784.0)

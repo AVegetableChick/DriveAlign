@@ -1,10 +1,12 @@
 """Unit tests for the S08 candidate pool construction.
 
 Purpose:
-    Freeze the P1.1 geometry: cone filtering with per-class-group ranges,
-    the omnidirectional proximity disc as an ANGLE-only exemption for near
-    gate survivors, top-8 truncation, and the sample-token lexicographic
-    tie-break for exact distance ties (determinism).
+    Freeze the P1.1 geometry: cone filtering with per-class-group ranges
+    plus the v7 per-class override (two-wheelers take the 45 m vehicle
+    range across groups, P-1), the omnidirectional proximity disc as an
+    ANGLE-only exemption for near gate survivors, top-8 truncation, and
+    the ann-token lexicographic tie-break for exact distance ties
+    (determinism).
 
 Startup command:
     ``conda activate autovla_codeclean && PYTHONPATH=DriveAlign/src python -m \
@@ -55,6 +57,19 @@ def test_cone_range_is_per_class_group(pool_cfg):
     vehicle_far = _cand("v", category="car", distance=40.0)
     kept = select_objects([pedestrian_far, vehicle_far], pool_cfg)
     assert [c.ann_token for c in kept] == ["v"]  # ped range 30 < 40, vehicle 45 > 40
+
+
+def test_cone_range_per_class_override_extends_two_wheelers(pool_cfg):
+    """P-1 per-class 覆盖：两轮车跨组取 45 m（vru 组 30 m 被覆盖）；
+    无覆盖键的类别回落组值（cone_range_for 的优先级）。"""
+    assert pool_cfg.cone_range_for("bicycle") == 45.0
+    assert pool_cfg.cone_range_for("motorcycle") == 45.0
+    assert pool_cfg.cone_range_for("pedestrian") == 30.0
+    bike_far = _cand("b", category="bicycle", distance=40.0)
+    moto_far = _cand("m", category="motorcycle", distance=40.0)
+    ped_far = _cand("p", category="pedestrian", distance=40.0)
+    kept = select_objects([bike_far, moto_far, ped_far], pool_cfg)
+    assert [c.ann_token for c in kept] == ["b", "m"]
 
 
 def test_unscorable_states_never_enter_the_pool(pool_cfg):

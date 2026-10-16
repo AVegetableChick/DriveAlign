@@ -1,0 +1,77 @@
+{
+  "version": "v7-rules-0.3.0",
+  "status": "frozen",
+  "contract_version": "v7",
+  "description": "S13 contract v7 GT derivation rule thresholds (decision ledger S13_contract_v7_decision_log.md V7-R1 + sections 3.7-3.8, rules doc S13_v7_risk_factor_rules.md v2.4). FROZEN (2026-10-12, Stage C): the five calibration slots are final from the S13 train-only calibration sweep (S13_v7_calibration_report.md) - firing.base_m = 2.0, crossing_gate.lateral_thr_mps = 0.8 (speed threshold of the v2.4 crossing arrival test; thr calibration closed), object_near.radius_m = 5.5, braking.y_brake_m = 1.185, stationary_obstacle.y_st_m = 3.0 (extension scan 3.5/4.0 rejected: 3.5 breaks the 25% stationary-alarm guardrail with poor marginal recovery of v6 misses); firing assumption single (base split not supported by data). Structure changes from v4/v6 rules: pool regrouped into vru/vehicle/static with per-class cone-range override (bicycle/motorcycle keep 45 m); corridor d_risk_* replaced by the firing engine (buffer = base + deterministic support-function projection h(theta_gap) of the annotation box onto the gap direction; firing iff min over 13 CV samples of (d_k - h_k) < base, d_k = 0 samples fire directly); since rules v2.4 both crossing factors use an arrival-time test decoupled from firing - v_toward (in-band |v_lat|, out-of-band -sign(y_c)*v_lat) > lateral_thr_mps AND t_arrive <= t_arrive_max_s, where t_arrive = (|y_c| - band_half_width_m) / v_toward (0 when the center is already in-band) - and the firing engine feeds the yield union only; the in-path condition of braking/stationary widens from the fixed 1.185 m band to calibrated lateral half-widths Y_brake < Y_st; congestion is removed (starved) and object_near added (instantaneous spatial evidence, all classes). Units: distances meters, angles degrees, times seconds, speeds m/s.",
+  "pool": {
+    "cone_half_angle_deg": 30.0,
+    "proximity_disc_radius_m": 15.0,
+    "cone_range_by_group_m": {
+      "vehicle": 45.0,
+      "vru": 30.0,
+      "static": 15.0
+    },
+    "cone_range_by_class_m": {
+      "bicycle": 45.0,
+      "motorcycle": 45.0
+    },
+    "class_groups": {
+      "vru": ["pedestrian", "bicycle", "motorcycle"],
+      "vehicle": ["car", "truck", "construction_vehicle", "bus", "trailer"],
+      "static": ["barrier", "traffic_cone"]
+    }
+  },
+  "observability": {
+    "min_depth_m": 0.1,
+    "min_visible_area_frac": 0.0
+  },
+  "motion": {
+    "stationary_speed_mps": 0.5,
+    "band_half_width_deg": 45.0
+  },
+  "corridor": {
+    "t_risk_s": 3.0,
+    "time_step_s": 0.25,
+    "ego_length_m": 4.1,
+    "ego_width_m": 1.87,
+    "width_margin_m": 0.5
+  },
+  "firing": {
+    "base_m": 2.0,
+    "assumption": "single",
+    "base_vru_m": 2.0
+  },
+  "crossing_gate": {
+    "lateral_thr_mps": 0.8,
+    "band_half_width_m": 1.185,
+    "t_arrive_max_s": 5.0
+  },
+  "braking": {
+    "evidence_window_s": 3.0,
+    "speed_drop_mps": 0.5,
+    "y_brake_m": 1.185
+  },
+  "stationary_obstacle": {
+    "evidence_window_s": 3.0,
+    "max_speed_mps": 0.5,
+    "y_st_m": 3.0
+  },
+  "object_near": {
+    "radius_m": 5.5
+  },
+  "oncoming": {
+    "range_m": 20.0
+  },
+  "action": {
+    "window_s": 3.0,
+    "delta": 0.15,
+    "stop_speed_mps": 0.5
+  },
+  "calibration_targets": [
+    "firing.base_m",
+    "crossing_gate.lateral_thr_mps",
+    "object_near.radius_m",
+    "braking.y_brake_m",
+    "stationary_obstacle.y_st_m"
+  ]
+}

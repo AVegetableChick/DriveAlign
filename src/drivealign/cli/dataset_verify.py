@@ -66,6 +66,12 @@ def _parse_args(argv=None) -> argparse.Namespace:
         "--reports", type=Path, default=Path(DEFAULT_REPORTS),
         help="Where the frozen reports live (for byte comparison).",
     )
+    parser.add_argument(
+        "--anchor-manifest", type=Path, default=None,
+        help="Reference anchor_policy_manifest.json when it lives outside the "
+        "assets dir (e.g. the S13 v7 face manifests are kept in "
+        "data/face_manifests/<v>/). Defaults to <assets>/anchor_policy_manifest.json.",
+    )
     return parser.parse_args(argv)
 
 
@@ -102,6 +108,12 @@ def main(argv=None) -> int:
     # The frozen manifests live inside the v1 asset dir; later builds record
     # their (external) scene-manifest dir in the frozen config instead.
     scene_manifests_dir = Path(frozen["config"].get("scene_manifests_dir", str(assets)))
+    # v7 起资产布局默认不变；face manifest 独立目录时经 --anchor-manifest 指入。
+    anchor_reference = (
+        args.anchor_manifest.expanduser().resolve()
+        if args.anchor_manifest is not None
+        else assets / "anchor_policy_manifest.json"
+    )
 
     for path in (scratch, scratch_reports):
         if path.exists():
@@ -141,7 +153,7 @@ def main(argv=None) -> int:
     pairs = [
         (assets / "dataset_manifest.json", scratch / "dataset_manifest.json"),
         (assets / "quarantine.jsonl", scratch / "quarantine.jsonl"),
-        (assets / "anchor_policy_manifest.json", scratch / "anchor_policy_manifest.json"),
+        (anchor_reference, scratch / "anchor_policy_manifest.json"),
     ]
     pairs += [
         (frozen_reports / name, scratch_reports / name)
@@ -169,6 +181,7 @@ def main(argv=None) -> int:
     report = {
         "manifest_type": "determinism_report",
         "frozen_builder_commit": frozen_commit,
+        "anchor_manifest_reference": str(anchor_reference),
         "compared_files": len(pairs),
         "differing": differing,
         "gates": gates,

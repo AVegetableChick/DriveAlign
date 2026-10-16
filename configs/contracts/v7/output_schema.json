@@ -1,0 +1,156 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://drivealign.local/schemas/contracts/v7/output_schema.json",
+  "title": "DriveAlign structured driving output contract v7",
+  "description": "Single-image driving scene analysis output contract. Changes from v6 (S13 contract v7 ruling): (1) risk_factors closed over the revised 6-item taxonomy in configs/contracts/v7/risk_taxonomy.json — corridor_conflict removed (constructively nested; its static remnant is absorbed by the widened stationary_obstacle in-path condition) and congestion removed (starved label) with its slot re-purposed as object_near; vehicle_merging renamed vehicle_crossing and pedestrian_crossing widened to vru_crossing (pedestrian + bicycle + motorcycle), both gated by a unified lateral-velocity rule; (2) critical_objects items additionally carry bev_x / bev_y — the ego-frame [x_forward, y_left] position in meters (0.1 m granularity) of the nearest point of the object's footprint, complementing bbox_2d (2D grounding) and the center-distance semantics of the GT-only distance field. Each risk_factors item is an object {factor, objects}: objects lists the ids of the critical_objects that trigger that factor (risk attribution, ruling V7-A1). bbox_2d is [x_min, y_min, x_max, y_max] in absolute input-image pixel coordinates, origin top-left. Open-vocabulary model results are normalized by the versioned synonym tables; unmapped terms are recorded, never silently repaired.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "critical_objects",
+    "risk_factors",
+    "yield_required",
+    "speed_action"
+  ],
+  "properties": {
+    "critical_objects": {
+      "description": "Objects relevant to the current driving decision. Empty list allowed. Hard cap of 8 items keeps token length and scoring deterministic.",
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "$ref": "#/$defs/critical_object"
+      }
+    },
+    "risk_factors": {
+      "description": "Risk attribution list: each item pairs one canonical factor from configs/contracts/v7/risk_taxonomy.json (synonyms normalized by the parser before validation) with the ids of the critical_objects that trigger it; objects is non-empty and references ids assigned in this response. Empty list allowed; duplicate factors not allowed (parser-enforced).",
+      "type": "array",
+      "maxItems": 6,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "factor",
+          "objects"
+        ],
+        "properties": {
+          "factor": {
+            "type": "string",
+            "enum": [
+              "vru_crossing",
+              "vehicle_crossing",
+              "lead_vehicle_braking",
+              "stationary_obstacle",
+              "object_near",
+              "oncoming_traffic"
+            ]
+          },
+          "objects": {
+            "description": "Ids (0-7) of the critical_objects triggering this factor; at least one; ids must exist in critical_objects (parser semantic check).",
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 8,
+            "uniqueItems": true,
+            "items": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 7
+            }
+          }
+        }
+      }
+    },
+    "yield_required": {
+      "description": "True when the ego vehicle should yield to another road user or situation.",
+      "type": "boolean"
+    },
+    "speed_action": {
+      "description": "Requested speed control action. Ground truth for evaluation is derived from future physics by the M09 oracle.",
+      "enum": [
+        "ACCELERATE",
+        "KEEP_SPEED",
+        "DECELERATE",
+        "STOP"
+      ]
+    }
+  },
+  "$defs": {
+    "critical_object": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "category",
+        "bbox_2d",
+        "motion_state",
+        "bev_x",
+        "bev_y"
+      ],
+      "properties": {
+        "id": {
+          "description": "Unique integer (0-7) identifying the object within this response; risk_factors entries reference objects by this id. Duplicates are a parser semantic failure.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 7
+        },
+        "category": {
+          "description": "Canonical category from the nuScenes detection class set; synonyms normalized via configs/contracts/v7/category_vocab.json.",
+          "type": "string",
+          "enum": [
+            "car",
+            "truck",
+            "construction_vehicle",
+            "bus",
+            "trailer",
+            "barrier",
+            "motorcycle",
+            "bicycle",
+            "pedestrian",
+            "traffic_cone"
+          ]
+        },
+        "bbox_2d": {
+          "description": "Four integers [x_min, y_min, x_max, y_max] in absolute image pixel coordinates, origin top-left (token-budget ruling 2026-10-11: the prompt teaches integers; the parser accepts numbers and rounds nothing here). Corner-order and image-bounds checks are applied by the parser as semantic validation.",
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "number",
+              "minimum": 0
+            }
+          ],
+          "items": false,
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "motion_state": {
+          "description": "Coarse motion state; ground truth derivable from nuScenes box velocity relative to ego. Canonical values defined in configs/contracts/v7/motion_vocab.json.",
+          "type": "string",
+          "enum": [
+            "stationary",
+            "same_direction",
+            "oncoming",
+            "crossing"
+          ]
+        },
+        "bev_x": {
+          "description": "Forward position of the nearest point of the object's footprint relative to ego, in meters in the ego frame (x = ego heading direction), rounded to 0.1 m. Complements bbox_2d (2D grounding); the GT-only distance field keeps center-distance semantics.",
+          "type": "number"
+        },
+        "bev_y": {
+          "description": "Leftward position of the nearest point of the object's footprint relative to ego, in meters in the ego frame (y = left; negative = right), rounded to 0.1 m.",
+          "type": "number"
+        }
+      }
+    }
+  }
+}
