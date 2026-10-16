@@ -50,6 +50,9 @@ class SampleRequest:
     image: str | Path
     available_speed: str | None = None
     image_size: tuple[float, float] | None = None
+    # S13：模型发射 bbox 所处图像空间（如 max_pixels=360000 的 smart-resize
+    # 输入 784x448）；非 None 时 parse 内反变换回 image_size 原图空间。
+    bbox_source_size: tuple[float, float] | None = None
     contract_version: str | None = None
 
 
@@ -171,6 +174,7 @@ def run_structured_inference(
         generation.text,
         contract_version=request.contract_version,
         image_size=request.image_size,
+        bbox_source_size=request.bbox_source_size,
     )
     status = OK_STATUS if result.ok else result.errors[0].category.value
     return _make_record(

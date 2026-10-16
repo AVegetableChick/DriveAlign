@@ -1,0 +1,62 @@
+# S13 Step 6 - 1F Base v7-face 全量基准配置（`configs/benchmark/base_1f_v7.yaml`）
+#
+# 来源：逐字段复制 `configs/benchmark/base_1f_v6.yaml`（S11 Step 0.3 建），仅改四处：
+#   1. `run_name`: base_1f_v6 -> base_1f_v7；
+#   2. `contract_version`: v6 -> v7（request hash 代际变化为预期，实施规划 §7-4）；
+#   3. `max_new_tokens`: 512 -> 700（S13 V7-A2 拍板 2026-10-11：risk_factors 归因
+#      对象化 + critical_objects 新增 bev/id 后，紧凑发射最坏 case 620 tokens
+#      （schema 对抗口径 C，Qwen2.5-VL-3B 实测），700 留 80 余量；带空格形态最坏
+#      808 救不回，故 v7 发射面同时切换为紧凑 JSON）；
+#   4. `model.processor.max_pixels: 360000`（**2026-10-14 开跑后口径变更，用户拍板**：
+#      "S12 之所以这么做是因为时间紧急""必须把 base 的分辨率调整到和 sft 一致"——
+#      base 面分辨率对齐 SFT（A1 同值），v7 内部 base/sft paired-delta 两侧视觉
+#      token 口径一致。跨代 base_v6（全分辨率）对比含分辨率因素，解读时注明。
+#      旧口径（全分辨率）阶段产物（313+288 条）已归档于
+#      runs/S13_base_1f_v7*/_discarded_fullres/，不入评测。）。
+# v6 冻结 config（base_1f_v6.yaml / base_1f.yaml）零改动，历史读数可比性不受影响。
+#
+# 状态：frozen（2026-10-14，base v7 benchmark 开跑前冻结；sha256 登记于
+# S13 实施规划 §6.1 / 决策台账 §9——config 内不放自引用 sha 值）。
+# 冻结后任何改动走台账变更流程（base_1f_v6 先例）。
+#
+# 冻结要旨（与 v6 面口径逐值一致，保证跨代读数可比）：
+#   - policy=1F、split=test、greedy 解码（do_sample=false / temperature=0.0）、
+#     dtype=bfloat16、seed=0、speed_line_precision=3：全部钉死，不得改。
+#   - 配套评测面 = eval v3（`configs/evaluation/eval_v3.yaml`，BEV 误差族 +
+#     risk 归因族 + v7 词表；正式报告前 provisional -> frozen）。
+
+status: frozen
+run_name: base_1f_v7
+split: test
+input_policy: 1F
+contract_version: v7
+image_transform: null
+
+model:
+  path: /root/autodl-tmp/drivealign_workspace/models/Qwen2.5-VL-3B-Instruct
+  revision: null
+  dtype: bfloat16
+  device_map: auto
+  attn_implementation: flash_attention_2
+  processor:
+    use_fast: true
+    # 与 SFT 评测面（configs/benchmark/sft_1f_v7.yaml）同值：A1 分辨率口径，
+    # 2026-10-14 用户拍板 base 面对齐（见文件头变更记录第 4 条）。
+    max_pixels: 360000
+
+runtime:
+  local_files_only: true
+
+generation:
+  do_sample: false
+  temperature: 0.0
+  max_new_tokens: 700
+
+speed_line_precision: 3
+seed: 0
+
+# S13（2026-10-15）：模型 bbox 发射空间声明。base（未训）模型在 max_pixels=360000
+# 下输出的 bbox_2d 处于 smart-resize 输入空间 784x448（S11 A1 实测表）；runner 在
+# parse 端按 (image_w/784, image_h/448) 确定性反变换回原图坐标后才落盘。
+# null/缺省 = 模型已发射原图坐标（SFT 面 config 不设此字段）。
+bbox_output_space: [784, 448]

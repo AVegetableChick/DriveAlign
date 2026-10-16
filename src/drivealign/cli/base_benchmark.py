@@ -20,7 +20,7 @@ Example launch command (pilot, GPU/tmux, see S09 plan section 4):
     cd /root/autodl-tmp/drivealign_workspace && set -o pipefail && \\
     PYTHONPATH=DriveAlign/src python -m drivealign.cli.base_benchmark \\
     --config DriveAlign/configs/benchmark/base_1f.yaml \\
-    --anchor-manifest data/dataset_v4/anchor_policy_manifest.json \\
+    --anchor-manifest data/face_manifests/v6/anchor_policy_manifest.json \\
     --dataset-root data/dataset_v4 --nuscenes-dataroot data/nuscenes/trainval \\
     --anchors-file runs/S09_base_benchmark/pilot_tokens.txt \\
     --out runs/S09_base_benchmark/predictions_pilot.jsonl \\
@@ -181,6 +181,7 @@ def build_benchmark_request(
     contract_version: str,
     transform: str | None = None,
     scratch_dir: str | Path | None = None,
+    bbox_source_size: tuple[float, float] | None = None,
 ) -> tuple[Any, Any]:
     """Build (SampleRequest, ModelRequest) with a hash-face consistency guard.
 
@@ -224,10 +225,18 @@ def build_benchmark_request(
             else:
                 make_shuffled_image(source, target)
         image = target
+    # S13：parse 端 image-bounds 检查 / coarse_position / bbox 反变换都需要
+    # 原图（此处为实际送模型的图，counterfactual 变换图同尺寸）尺寸。
+    from PIL import Image
+
+    with Image.open(image) as im:
+        image_size = (float(im.width), float(im.height))
     request = SampleRequest(
         sample_id=record.sample_token,
         image=image,
         available_speed=speed_line,
+        image_size=image_size,
+        bbox_source_size=bbox_source_size,
         contract_version=contract_version,
     )
     return request, model_request
@@ -244,6 +253,12 @@ def main(argv: list[str] | None = None) -> int:
     manifest = json.loads(Path(args.anchor_manifest).read_text(encoding="utf-8"))
     policy = POLICY_MAP[str(config["input_policy"])]
     contract_version = str(config["contract_version"])
+    # S13：模型 bbox 发射空间声明（如 [784, 448] = max_pixels=360000 的
+    # smart-resize 输入）；null/缺省 = 模型已发射原图坐标（SFT 面）。
+    bbox_raw = config.get("bbox_output_space")
+    bbox_source_size = (
+        (float(bbox_raw[0]), float(bbox_raw[1])) if bbox_raw else None
+    )
     tokens = select_tokens(manifest, str(config["split"]), args.anchors_file, args.limit)
 
     out_path = Path(args.out)
@@ -286,6 +301,7 @@ def main(argv: list[str] | None = None) -> int:
                 contract_version=contract_version,
                 transform=args.image_transform,
                 scratch_dir=scratch_dir,
+                bbox_source_size=bbox_source_size,
             )
             sample_record = run_structured_inference(
                 loaded, request, generation_config=generation_config

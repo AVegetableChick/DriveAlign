@@ -255,6 +255,7 @@ def _record_from_generation(
         generation.text,
         contract_version=request.contract_version,
         image_size=request.image_size,
+        bbox_source_size=request.bbox_source_size,
     )
     status = OK_STATUS if result.ok else result.errors[0].category.value
     return SampleRecord(

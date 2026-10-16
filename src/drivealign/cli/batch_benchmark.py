@@ -125,6 +125,12 @@ def main(argv: list[str] | None = None) -> int:
     manifest = json.loads(Path(args.anchor_manifest).read_text(encoding="utf-8"))
     policy = POLICY_MAP[str(config["input_policy"])]
     contract_version = str(config["contract_version"])
+    # S13：模型 bbox 发射空间声明（如 [784, 448] = max_pixels=360000 的
+    # smart-resize 输入）；null/缺省 = 模型已发射原图坐标（SFT 面）。
+    bbox_raw = config.get("bbox_output_space")
+    bbox_source_size = (
+        (float(bbox_raw[0]), float(bbox_raw[1])) if bbox_raw else None
+    )
     tokens = select_tokens(manifest, str(config["split"]), args.anchors_file, args.limit)
 
     out_path = Path(args.out)
@@ -179,6 +185,7 @@ def main(argv: list[str] | None = None) -> int:
                     contract_version=contract_version,
                     transform=args.image_transform,
                     scratch_dir=scratch_dir,
+                    bbox_source_size=bbox_source_size,
                 )
                 batch_requests.append(request)
                 batch_model_requests.append(model_request)

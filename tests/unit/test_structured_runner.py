@@ -31,9 +31,12 @@ from drivealign.inference.structured_runner import (
 VALID_SAMPLE = {
     "critical_objects": [
         {
+            "id": 0,
             "category": "car",
             "bbox_2d": [120, 300, 480, 560],
             "motion_state": "same_direction",
+            "bev_x": 17.8,
+            "bev_y": 0.0,
         }
     ],
     "risk_factors": [],
@@ -179,9 +182,9 @@ def test_fenced_output_is_extracted_with_flag():
 
 
 @pytest.mark.usefixtures("stub_generate")
-def test_default_record_carries_contract_v6():
+def test_default_record_carries_contract_v7():
     record = run_structured_inference(None, SampleRequest("ok-1", "img_ok.jpg"))
-    assert record.contract_version == "v6"  # S11: prompt stops teaching reasoning
+    assert record.contract_version == "v7"  # S13: 6-item taxonomy + BEV fields
 
 
 @pytest.mark.usefixtures("stub_generate")

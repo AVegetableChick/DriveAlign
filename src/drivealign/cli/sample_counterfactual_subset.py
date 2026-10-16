@@ -14,7 +14,7 @@ Purpose:
 Example launch command:
     ``conda activate autovla_codeclean && cd /root/autodl-tmp/drivealign_workspace && \
     PYTHONPATH=DriveAlign/src python -m drivealign.cli.sample_counterfactual_subset \
-    --anchor-manifest data/dataset_v4/anchor_policy_manifest.json \
+    --anchor-manifest data/face_manifests/v6/anchor_policy_manifest.json \
     --split test --n 200 --seed 20261003 \
     --out runs/S09_base_benchmark/counterfactual_subset.txt``
 """

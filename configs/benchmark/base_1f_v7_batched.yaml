@@ -1,0 +1,65 @@
+# S13 Step 6b - 1F Base v7-face 批量推理配置（`configs/benchmark/base_1f_v7_batched.yaml`）
+#
+# 定位：S09 备案（docs/stages_record/S09_base_benchmark/S09_inference_acceleration.md）
+# 第 1 路线"batch 推理"在 base v7 面的落地（S12 Step 6b 先例
+# `sft_1f_v6_batched.yaml` 同款）。**冻结面 `base_1f_v7.yaml` 不动**（bs=1 权威
+# 口径），本文件是独立预注册面：除下述两处新增字段外逐字段复制冻结面
+# （其 sha256 已登记台账），保证请求构造 / hash 守卫 / resume / 解码口径完全同源。
+#
+# 新增字段（相对 base_1f_v7.yaml）：
+#   1. `runner: batched_v1`：批量推理 path 标记（`inference/batched_runner.py` +
+#      `cli/batch_benchmark.py`；无 adapter_path 时走 S09 base 装载路径）；
+#   2. `batch_size: 16`：S12 定档依据（S12_batched_inference_speed.md：bs=16
+#      实测 3.48× vs bs=1，峰值显存 12.3GB / 32GB 卡余量充足，GPU 利用率近饱和；
+#      bs=32 仅再 +13%）。批大小由配置承载，CLI 仅留 override。
+#
+# 用户拍板（2026-10-14）：base v7 全量走 batch=16（~4.3h 外推 vs bs=1 ~16h）；
+# 冻结面 bs=1 全量跑暂缓，parity gate 执行后如需权威面再补跑。
+#
+# ⚠️ parity gate（与冻结面 bs=1 输出逐值 diff）延后执行（S12 先例同款拍板：
+# 2026-10-07 时间优先；本面沿用 2026-10-14 用户拍板）：两份全量 JSONL 就绪后
+# 可在 CPU 层事后补跑；在此之前本面读数须标注"待 parity 复核"，不得与
+# S09/S11/S12 的 bs=1 冻结面读数混用。
+#
+# 冻结要旨（与 base_1f_v7 完全一致的部分）：
+#   - policy=1F、split=test、greedy 解码（do_sample=false / temperature=0.0 /
+#     max_new_tokens=700）、dtype=bfloat16、seed=0、speed_line_precision=3、
+#     contract_version=v7。
+#   - 输出约定：`runs/S13_base_1f_v7_batched/`（CLI --out 指定），
+#     严禁写冻结面的 predictions 文件名。
+
+status: frozen
+run_name: base_1f_v7_batched
+runner: batched_v1
+batch_size: 16
+split: test
+input_policy: 1F
+contract_version: v7
+image_transform: null
+
+model:
+  path: /root/autodl-tmp/drivealign_workspace/models/Qwen2.5-VL-3B-Instruct
+  revision: null
+  dtype: bfloat16
+  device_map: auto
+  attn_implementation: flash_attention_2
+  processor:
+    use_fast: true
+    # 与冻结面 base_1f_v7 同步：2026-10-14 口径变更（base 分辨率对齐 SFT，
+    # max_pixels=360000，用户拍板，见 base_1f_v7.yaml 文件头变更记录）。
+    max_pixels: 360000
+
+runtime:
+  local_files_only: true
+
+generation:
+  do_sample: false
+  temperature: 0.0
+  max_new_tokens: 700
+
+speed_line_precision: 3
+seed: 0
+
+# S13（2026-10-15）：与冻结面 base_1f_v7 同步——模型 bbox 发射空间声明
+# （784x448），parse 端反变换回原图坐标后落盘；详见 base_1f_v7.yaml 同名字段注释。
+bbox_output_space: [784, 448]
