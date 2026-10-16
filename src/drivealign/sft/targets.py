@@ -55,10 +55,13 @@ ALL_EXPECTED_OUTPUT_FIELDS: frozenset[str] = frozenset(
     {"critical_objects", "risk_factors", "reasoning", "yield_required", "speed_action"}
 )
 
-#: 冻结的序列化配置（§2.2）：`ensure_ascii=False` 保留中文，`separators=(", ", ": ")`
-#: 让 dump 结果更像"模型自然输出的可爱 JSON"（紧凑但键后带空格），也是 SFT 监督文本
-#: 确定性的一部分。此配置在训练时会被冻结进 `configs/sft/sft_smoke_1f.yaml` 并登记 sha。
-DUMP = dict(ensure_ascii=False, separators=(", ", ": "))
+#: 冻结的序列化配置（§2.2）：`ensure_ascii=False` 保留中文。
+#: separators 历史：v6 为 `(", ", ": ")`（"键后带空格更像自然输出"）；v7 起改为
+#: `(",", ":")` **紧凑发射**（S13 V7-A2 拍板，2026-10-11）：归因对象化（V7-A1）后
+#: 带空格最坏 case 达 678–808 tokens（Qwen2.5-VL-3B 实测），紧凑发射把最坏 case
+#: 压回 620（schema 对抗口径），700 生成预算下全部安全。v6 冻结样本 artifact 里的
+#: target_text 已落盘，不受本改动影响（encode_frozen_sample 读冻结串，不再重 dump）。
+DUMP = dict(ensure_ascii=False, separators=(",", ":"))
 
 
 def as_target(expected_output: Mapping[str, Any] | None) -> dict[str, Any]:

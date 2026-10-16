@@ -1,0 +1,84 @@
+# S13 SFT 正式单帧运行配置（`configs/sft/sft_1f_v7.yaml`）
+#
+# 状态：frozen（2026-10-15 GPU 训练前冻结，S12 sft_1f.yaml 先例：训练前冻结；
+# 冻结 sha256 登记 S13 决策台账 §9 与实施规划 §6.1；provisional sha 440b88a3… 作废）。
+# 来源：逐字段复制 S12 的 `configs/sft/sft_1f.yaml`（frozen），只改**代际类**字段
+# （见下方"与 v6 的差异"）。训练规模 / LoRA pattern / max_pixels / 优化调度
+# **逐值不变**。
+#
+# 与 v6 的差异（S13 V7-A2 拍板 2026-10-11）
+# -----------------------------------------
+#   1. `contract_version`: v6 -> v7（训练面 == 评测面，§2.3 parity；v7 面 =
+#      四字段 expected_output（V7-C1 去 reasoning）+ critical_objects 携 bev_x/
+#      bev_y/id（V7-B1）+ risk_factors 对象化 {factor, objects}（V7-A1））；
+#   2. `target_dump.separators`: [", ", ": "] -> [",", ":"]（**紧凑发射**，V7-A2：
+#      带空格最坏 case 678-808 tokens 超 640 预算；紧凑后最坏 620，配 700 生成
+#      预算余 80。与 `src/drivealign/sft/targets.py` 的 DUMP 逐值一致——模型发射
+#      形态 = SFT 监督文本形态）；
+#   3. `generation.max_new_tokens`: 512 -> 700（沿 V7-A2 统一口径；本段仅自推理/
+#      G1 软层诊断用，正式评测走 `configs/benchmark/sft_1f_v7.yaml`）。
+#
+# 冻结要旨（§2.1 语义不变式，与 S12 同款钉死）
+#   - LoRA：r=16/alpha=32/dropout=0.05，`target_modules` 为**路径限定正则字符串**
+#     （不能用裸后缀 list，见 S11_bug_log B7）。
+#   - 视觉输入：max_pixels=360000（A1；train 与 eval 两侧必须同值，
+#     `configs/benchmark/sft_1f_v7.yaml` 同值）。
+#   - 优化：batch/accum = 1/4（有效 batch 4）、lr=5e-5、1 epoch（train 全量
+#     22,941 条 ≈ 5,735 optimizer step）、save_steps=500 全量保留。
+
+status: frozen
+run_name: sft_1f_v7
+contract_version: v7          # 训练面 == 评测面（§2.3）
+input_policy: 1F
+seed: 0
+
+# 目标序列化配置（§2.2）：必须与 src/drivealign/sft/targets.py 的 DUMP 一致
+# （V7-A2 起为紧凑发射）。
+target_dump:
+  ensure_ascii: false
+  separators: [",", ":"]      # json.dumps 的 separators 需要 (item,key) 二元组
+
+model:
+  path: /root/autodl-tmp/drivealign_workspace/models/Qwen2.5-VL-3B-Instruct
+  revision: null
+  dtype: bfloat16
+  device_map: auto
+  attn_implementation: flash_attention_2
+  processor:
+    use_fast: true
+    # A1 训练加速：输入分辨率减半（1600×900 → 784×448，visual token 1824→448）。
+    # 评测侧（configs/benchmark/sft_1f_v7.yaml）必须同一值。
+    max_pixels: 360000
+
+runtime:
+  local_files_only: true
+
+# LoRA 起点参数（S11 B7 / S12 §7-C）
+lora:
+  r: 16
+  alpha: 32
+  dropout: 0.05
+  # 仅语言解码层，用「路径限定正则字符串」表达（peft 对 str 走 re.fullmatch，
+  # 对 list 走后缀匹配会连带命中 visual.blocks.*.mlp.*，静默训到 ViT，见 B7）。
+  target_modules: 'model\.layers\.\d+\.(self_attn\.(q_proj|k_proj|v_proj|o_proj)|mlp\.(gate_proj|up_proj|down_proj))'
+
+# 优化与调度（S12 冻结口径逐值沿用）
+training:
+  per_device_train_batch_size: 1
+  gradient_accumulation_steps: 4
+  learning_rate: 5.0e-5
+  num_train_epochs: 1
+  optimizer: adamw_torch
+  lr_scheduler_type: cosine
+  warmup_ratio: 0.05
+  weight_decay: 0.01
+  max_grad_norm: 1.0
+  gradient_checkpointing: true
+  save_steps: 500           # ≈11 个候选 + 最终
+  save_total_limit: null    # 全量保留 adapter（体积小；供中断 resume）
+
+# 解码（V7-A2 统一口径；仅自推理/G1 软层诊断用）
+generation:
+  do_sample: false
+  temperature: 0.0
+  max_new_tokens: 700

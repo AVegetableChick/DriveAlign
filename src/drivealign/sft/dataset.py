@@ -179,20 +179,27 @@ def encode_chat(
     """把单样本编码成训练所需张量（§2.2 监督段 + §2.4 单样本分工）。
 
     实现要点（与 `inference/base_runner.generate_one` 同源，§2.3 parity）：
-      1. 构造 1F user 消息（image + prompt），`apply_chat_template` 加生成前缀
-         （wait：训练要的是**完整上下文**，非"仅生成前缀"——见下 NOTE）。
+      1. 构造 1F user 消息（image + prompt），`apply_chat_template` 渲染出带
+         assistant 开仓标记的完整上下文（与推理端生成位置同界——见下 NOTE）。
       2. `process_vision_info` 取图像输入，`processor(text, images, ...)` 得
          `input_ids`（含图像占位 token）与 `pixel_values`/`image_grid_thw`。
       3. 监督目标 = 目标文本 token 化（`add_special_tokens=False`），再补一个
          IM_END；`labels` 前缀全 -100、监督段为完整目标 ids。
 
-    NOTE（重要歧义澄清）
-    ---------------- 
-    训练样本的 assistant 段必须出现在上下文里，因此**不能**用
-    `add_generation_prompt=True`（那是评测生成时把"assistant 开头"留给模型续写）。
-    这里我们手工把目标文本编码进 `input_ids`，用 `labels` 标记监督位，等价于
-    "user 已答完、且答案为该目标文本"。若误用 `add_generation_prompt=True`，
-    会漏掉 assistant 标记导致目标位错位——故此处显式注释澄清，不做裁剪。
+    NOTE（上下文对齐，S13 ctxbug 修复 2026-10-15）
+    ----------------
+    assistant 监督段必须紧跟 `<|im_start|>assistant\\n`（模型"该我说话了"的开仓
+    标记）——这正是推理时 `generate_one` 的续写位置（base_runner/batched_runner 均
+    `add_generation_prompt=True`）。因此本函数**必须**用 `add_generation_prompt=True`
+    渲染上下文，再把目标文本 token 拼在其后；labels 监督位 = target + `<|im_end|>`，
+    assistant 前缀本身在 user 前缀里（-100 不监督）。
+
+    历史 bug（S13 smoke8 暴露，台账 §9）：旧实现误用 `add_generation_prompt=False`
+    （当时 NOTE 的理由是"用 True 会漏掉 assistant 标记导致目标位错位"——不成立，
+    True 渲染恰好止于 assistant 开仓标记，target 接在其后位置语义正确）。旧编码下
+    22,941 条样本的上下文**从未出现** assistant 开仓标记，推理时模型站在一个训练中
+    未见过的状态上续写，格式回退 base 先验（indent=4 美化 JSON，8 对象场景 ~720+
+    token 打满 700 预算截断），内容仍受 adapter 牵引。修复后训练/推理边界逐位一致。
 
     返回 dict：`input_ids`(list[int])、`labels`(list[int])、`pixel_values`、
     `image_grid_thw`、`im_end_id`。
@@ -209,8 +216,9 @@ def encode_chat(
             ],
         }
     ]
-    # (2) 完整聊天模板（不裁剪、不加生成提示）：user + 待填空的 assistant 上下文。
-    text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=False)
+    # (2) 聊天模板带生成前缀（assistant 开仓标记收尾）：与推理端
+    # `generate_one` 的上下文逐位一致（S13 ctxbug 修复，见上方 NOTE）。
+    text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
     image_inputs, video_inputs = process_vision_info(messages)
     inputs = processor(
         text=[text],

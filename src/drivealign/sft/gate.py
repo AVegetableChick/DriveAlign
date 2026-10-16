@@ -181,7 +181,8 @@ def semantic_fields(four_fields: Mapping[str, Any]) -> dict[str, Any]:
         - `yield_required`：值相等（布尔）。
         - `critical_objects`：取 `(category, motion_state)` 的**集合**——bbox 数值
           会因 token 级采样/核函数差异抖动，故不入语义键；对象顺序也不计。
-        - `risk_factors`：字符串**集合**（顺序不计）。
+        - `risk_factors`：因子名**集合**（顺序不计）——v7 归因（V7-A1）后条目
+          是 `{factor, objects}`，语义键取 `factor` 名；旧版条目仍是字符串。
 
     入参既可是 `StructuredDrivingOutput.to_dict()`，也可是 GT 的四字段 dict
     （记录侧 `expected_output` 子集）。缺字段按 None/空集处理，交由 diff 暴露。
@@ -196,7 +197,10 @@ def semantic_fields(four_fields: Mapping[str, Any]) -> dict[str, Any]:
         "speed_action": four_fields.get("speed_action"),
         "yield_required": four_fields.get("yield_required"),
         "critical_objects": object_keys,
-        "risk_factors": frozenset(four_fields.get("risk_factors") or []),
+        "risk_factors": frozenset(
+            entry["factor"] if isinstance(entry, Mapping) else entry
+            for entry in (four_fields.get("risk_factors") or [])
+        ),
     }
 
 

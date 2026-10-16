@@ -122,3 +122,59 @@ def test_encode_chat_requires_processor_and_image():
     # 无本地模型时不跑（等价于既有 test 的 skipif 口径）。此处仅验证函数存在且
     # 缺 processor 时会在 process_vision_info 处失败（不 mock，直接断言签名可用）。
     assert callable(encode_chat)
+
+
+_PROCESSOR_DIR = (
+    __import__("pathlib").Path(__file__).resolve().parents[3]
+    / "models" / "Qwen2.5-VL-3B-Instruct"
+)
+
+
+def test_encode_chat_context_alignment_with_inference(tmp_path):
+    """S13 ctxbug 回归钉（2026-10-15）：训练上下文必须以 assistant 开仓标记收尾。
+
+    旧实现用 `add_generation_prompt=False`，22,941 条样本的上下文从未出现
+    `<|im_start|>assistant\\n`；推理端 `generate_one`（True）却从该标记后续写 →
+    模型站在训练未见过的状态上，格式回退 base 先验（smoke8 实证：indent=4
+    美化 JSON、8 对象 ~720 token 打满 700 预算截断）。本钉断言：
+      1. input_ids 解码后以 `<|im_start|>assistant\\n` 收尾（与推理端逐位一致）；
+      2. 监督位 = target 全部 ids + 一个 im_end，前缀（含 assistant 标记）全 -100。
+    仅依赖本地 processor（无模型权重），缺目录自动 skip。
+    """
+    if not _PROCESSOR_DIR.is_dir():
+        pytest.skip("local Qwen processor not present")
+
+    from PIL import Image
+    from transformers import AutoProcessor
+
+    from drivealign.sft.dataset import IM_END_TOKEN, encode_chat
+
+    processor = AutoProcessor.from_pretrained(
+        str(_PROCESSOR_DIR), local_files_only=True, use_fast=True
+    )
+    img_path = tmp_path / "fake_anchor.jpg"
+    Image.new("RGB", (64, 64), (127, 127, 127)).save(img_path)
+
+    target_text = '{"critical_objects":[],"risk_factors":[],"yield_required":false,"speed_action":"KEEP_SPEED"}'
+    encoded = encode_chat(
+        processor, prompt="unit-test prompt", image_path=img_path, target_text=target_text
+    )
+
+    input_ids = encoded["input_ids"]
+    labels = encoded["labels"]
+    tokenizer = processor.tokenizer
+
+    # ② 监督位结构：labels 与 full_ids 等长；context 段（含 assistant 标记）全 -100，
+    #    target ids + im_end 全监督。
+    target_ids = tokenizer(target_text, add_special_tokens=False)["input_ids"]
+    im_end_id = tokenizer.convert_tokens_to_ids(IM_END_TOKEN)
+    n_ctx = len(input_ids) - len(target_ids) - 1
+    assert len(labels) == len(input_ids)
+    assert labels[:n_ctx] == [-100] * n_ctx
+    assert labels[n_ctx:-1] == target_ids
+    assert labels[-1] == im_end_id
+
+    # ① 上下文段以 assistant 开仓标记收尾——旧实现（False 渲染）以
+    #    `<|im_end|>` + 换行收尾，此断言即失败。
+    ctx_ids = input_ids[:n_ctx]
+    assert tokenizer.decode(ctx_ids).endswith("<|im_start|>assistant\n")

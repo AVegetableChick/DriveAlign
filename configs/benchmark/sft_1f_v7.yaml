@@ -1,0 +1,52 @@
+# S13 - SFT-1F 的 v7 面 test 推理配置（`configs/benchmark/sft_1f_v7.yaml`）
+#
+# 来源：逐字段复制 `configs/benchmark/sft_1f_v6.yaml`（S12 Step 6 建），仅改四处：
+#   1. `run_name`: sft_1f_v6 -> sft_1f_v7；
+#   2. `contract_version`: v6 -> v7；
+#   3. `max_new_tokens`: 512 -> 700（V7-A2 统一口径，同 base_1f_v7.yaml）；
+#   4. `adapter_path`：指向 S13 SFT 产物约定目录（GPU 阶段已落定：best = 1-epoch
+#      训练末点 adapter 字节拷贝，无 val 选 best——S12 Step 5 流程从未执行，
+#      best ≡ final；溯源与 sha 见 best_freeze.json；`--adapter` 可运行时覆盖）。
+#
+# ⚠️ v6 冻结 config（sft_1f_v6.yaml / base_1f_v6.yaml）不动，历史读数可比。
+#
+# 冻结要旨（与 base_1f_v7 完全一致的部分）：
+#   - policy=1F、split=test、greedy 解码（do_sample=false / temperature=0.0 /
+#     max_new_tokens=700）、dtype=bfloat16、seed=0、speed_line_precision=3。
+#   - `model.processor.max_pixels: 360000` 与**训练侧**（`configs/sft/sft_1f_v7.yaml`）
+#     逐值相同（A1 口径：train/eval 同分辨率，否则视觉 token 口径两端不一致）。
+#   - 配套评测面 = eval v3（configs/evaluation/eval_v3.yaml）。
+#
+# 状态：frozen（2026-10-15 SFT 评测开跑前冻结；冻结 sha256 登记决策台账 §9）。
+
+status: frozen
+run_name: sft_1f_v7
+split: test
+input_policy: 1F
+contract_version: v7
+image_transform: null
+
+# SFT adapter 目录（GPU 阶段冻结的 best；可 --adapter 覆盖）。
+adapter_path: runs/S13_sft_1f_v7/checkpoints/sft_1f_v7/best
+
+model:
+  path: /root/autodl-tmp/drivealign_workspace/models/Qwen2.5-VL-3B-Instruct
+  revision: null
+  dtype: bfloat16
+  device_map: auto
+  attn_implementation: flash_attention_2
+  processor:
+    use_fast: true
+    # A1：与训练侧同值（见 configs/sft/sft_1f_v7.yaml）。
+    max_pixels: 360000
+
+runtime:
+  local_files_only: true
+
+generation:
+  do_sample: false
+  temperature: 0.0
+  max_new_tokens: 700
+
+speed_line_precision: 3
+seed: 0
